@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STAPS Course Studio — Ophélie CUYNET</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>⚡</text></svg>">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<style>body{margin:0;padding:0;background:#0a0e1a;}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+
+/* ═══════════════════════════════════════════════════════════════
+   STAPS COURSE STUDIO v4 — Ophélie CUYNET
+   + Multi-cours / Séquence
+   + Export JSON / postMessage / URL compatible appli STAPS suite
+   + Groupes & stagiaires pour évaluations différenciées
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── CLÉS API — stockées dans le navigateur (localStorage), JAMAIS en dur dans le code ───
+   Renseignées une fois via le bouton ⚙️ Clés API dans l'app. Elles ne quittent pas ce navigateur. */
+let CK = localStorage.getItem("staps_ck") || "";   // Clé Anthropic (Claude)
+let PK = localStorage.getItem("staps_pk") || "";   // Clé Perplexity (optionnelle)
+const MODEL = "claude-sonnet-4-6";                  // modèle Claude actuel (l'ancien claude-sonnet-4-20250514 est retiré)
+
+/* ─── UE DATABASE (compact) ─── */
+const DB={
+"TC-S1":{l:"Tronc Commun · S1",f:"Licence STAPS TC",lv:"L1",u:[
+{b:"Bloc 1 SHS",u:"Psychologie du Sport",th:"Psychologie",e:3,t:"CM+TD",d:"Motivation, émotions, intro psycho sportive"},
+{b:"Bloc 1 SHS",u:"Sociologie du sport",th:"Sociologie",e:3,t:"CM+TD",d:"Pratiques sociales, inégalités, genre"},
+{b:"Bloc 2 Sc.Vie",u:"Anatomie",th:"Anatomie",e:2,t:"CM+TD+TP",d:"Ostéologie, myologie, arthrologie"},
+{b:"Bloc 2 Sc.Vie",u:"Biomécanique",th:"Biomécanique",e:2,t:"CM+TD",d:"Forces, leviers, analyse mouvement"},
+{b:"Bloc 2 Sc.Vie",u:"Physiologie",th:"Physiologie",e:3,t:"CM+TD+TP",d:"Effort, adaptation cardiorespiratoire"},
+{b:"Bloc 3 APSA",u:"Spécialité + Polyvalences 1-3",th:"Pratique",e:12,t:"TP",d:"Spécialité au choix + 3 activités"},
+{b:"Bloc 4 Intervention",u:"Culture Numérique",th:"Numérique",e:2,t:"TD",d:"PIX, outils numériques"},
+{b:"Bloc 4 Intervention",u:"Institutions sportives",th:"Institutionnel",e:3,t:"CM+TD",d:"Organisation sport France, législation"},
+]},
+"TC-S2":{l:"Tronc Commun · S2",f:"Licence STAPS TC",lv:"L1",u:[
+{b:"Bloc 1 SHS",u:"Histoire du sport",th:"Histoire",e:3,t:"CM+TD",d:"Pratiques sportives, JO"},
+{b:"Bloc 1 SHS",u:"Psychologie sociale",th:"Psycho sociale",e:3,t:"CM+TD",d:"Dynamique groupe, cohésion"},
+{b:"Bloc 2 Sc.Vie",u:"Anatomie / Neurologie / Physiologie",th:"Sciences",e:7,t:"CM+TD+TP",d:"Anatomie fonctionnelle, SN, métabolisme"},
+{b:"Bloc 3 APSA",u:"Spécialité + Polyvalences 4-6",th:"Pratique",e:12,t:"TP",d:"3 nouvelles activités"},
+{b:"Bloc 4",u:"Anglais + Projet pro + Numérique",th:"Transversal",e:5,t:"TD",d:"Anglais sport, PIX, orientation"},
+]},
+"TC-S3":{l:"Tronc Commun · S3 (L2)",f:"Licence STAPS TC",lv:"L2",u:[
+{b:"Bloc 1 Analyser",u:"Psycho développement / Socio corps / Stats",th:"SHS+Méthodo",e:6,t:"CM+TD",d:"Développement enfant, corps social, stats"},
+{b:"Bloc 2 Scientifiques",u:"Anatomie / Biomécanique / Neurologie",th:"Sciences",e:6,t:"CM+TD+TP",d:"Anatomie avancée, biomécanique mouvement, plasticité"},
+{b:"Bloc 3 Concevoir",u:"Spécialité + Polyvalences 7-9",th:"Pratique",e:8,t:"TP",d:"Approfondissement + 3 activités"},
+{b:"Bloc 4 Intervenir",u:"Intervention pédagogique + Stage",th:"Pédagogie",e:8,t:"CM+TD+Stage",d:"Didactique, 165h stage scolaire"},
+{b:"Bloc 4 Intervenir",u:"Anglais",th:"Langues",e:2,t:"TD",d:"Anglais du sport"},
+]},
+"APAS-S4":{l:"L3 APAS · S4",f:"L3 APAS",lv:"L3 APAS",u:[
+{b:"Bloc 1 Analyser",u:"Déficiences sensori-motrices",th:"Pathologies",e:2,t:"CM+TD",d:"PC, AVC, lésions médullaires"},
+{b:"Bloc 1 Analyser",u:"Déficiences cardio-respiratoires",th:"Pathologies",e:1.5,t:"CM+TD",d:"BPCO, insuffisance cardiaque"},
+{b:"Bloc 1 Analyser",u:"Déficiences intellectuelles/mentales",th:"Pathologies",e:1.5,t:"CM+TD",d:"Trisomie, TSA"},
+{b:"Bloc 1 Analyser",u:"Statistiques santé/APA",th:"Méthodologie",e:2,t:"CM+TD",d:"Tests appliqués"},
+{b:"Bloc 2 Mobiliser",u:"Santé publique / Système APA / Milieux",th:"Institutionnel",e:5,t:"CM+TD",d:"OMS, CIF, loi sport-santé, IME, EHPAD"},
+{b:"Bloc 2 Mobiliser",u:"Anatomie pathologique",th:"Anatomie",e:1,t:"CM+TD",d:"Anatomie appliquée pathologies"},
+{b:"Bloc 3 Concevoir",u:"Spécialité + APSA adaptées",th:"Pratique adaptée",e:8,t:"TP",d:"Adaptation handicap"},
+{b:"Bloc 4 Intervenir",u:"Anglais + Qualités physiques + Stage",th:"Multi",e:9,t:"TD+Stage",d:"Anglais santé, populations spécifiques, stage"},
+]},
+"APAS-S5":{l:"L3 APAS · S5",f:"L3 APAS",lv:"L3 APAS",u:[
+{b:"Bloc 1 Publics",u:"Communication + Éval aptitudes",th:"Évaluation",e:6,t:"CM+TD+TP",d:"Batteries tests, bilans psychomoteurs"},
+{b:"Bloc 2 Connaissances",u:"Troubles neuromusculaires",th:"Neurologie",e:4,t:"CM+TD",d:"Parkinson, SEP, SLA, myopathies"},
+{b:"Bloc 2 Connaissances",u:"Vieillissement",th:"Gérontologie",e:2,t:"CM+TD",d:"Sarcopénie, chutes, EHPAD"},
+{b:"Bloc 2 Connaissances",u:"Troubles cardiorespiratoires",th:"Cardio",e:4,t:"CM+TD",d:"Réhab cardiaque, BPCO"},
+{b:"Bloc 3 PEC APA",u:"PEC APA + Polyvalences adaptées",th:"APA",e:8,t:"CM+TD+TP",d:"Natation/sports co/renforcement adaptés"},
+{b:"Bloc 4 Intervenir",u:"Pro + Projet + Anglais",th:"Multi",e:6,t:"TD",d:"CV, montage budgétaire, articles scientifiques"},
+]},
+"APAS-S6":{l:"L3 APAS · S6",f:"L3 APAS",lv:"L3 APAS",u:[
+{b:"Bloc 1",u:"Démarche scientifique",th:"Méthodologie",e:4,t:"CM+TD",d:"Protocoles, éthique recherche"},
+{b:"Bloc 2",u:"Ostéo-articulaire / Oncologie / Psychopatho",th:"Pathologies",e:8,t:"CM+TD",d:"Arthrose, cancer, diabète, TSA, TDAH, schizophrénie"},
+{b:"Bloc 3",u:"PEC APA + Polyvalences avancées",th:"APA",e:8,t:"CM+TD+TP",d:"Méthodes intervention avancées"},
+{b:"Bloc 4",u:"Stage APA 140h + ETP",th:"Stage+ETP",e:10,t:"Stage+CM",d:"4 sem. spécialisé + entretien motivationnel"},
+]},
+"EM-S4":{l:"L3 Éducation Motricité · S4",f:"L3 EM",lv:"L3 EM",u:[
+{b:"Bloc 1",u:"Psycho apprentissage / Socio éducation / Didactique",th:"SHS+Didactique",e:7,t:"CM+TD",d:"Feedback, inégalités, didactique EPS"},
+{b:"Bloc 2",u:"Anatomie / Physiologie / Contrôle moteur",th:"Sciences",e:6,t:"CM+TD",d:"Geste, effort enfant/ado, coordination"},
+{b:"Bloc 3",u:"Spécialité + Polyvalences",th:"Pratique",e:8,t:"TP",d:"3 activités polyvalentes"},
+{b:"Bloc 4",u:"Anglais + Stage + Qualités physiques",th:"Multi",e:9,t:"TD+Stage",d:"Stage terrain, qualités physiques élève"},
+]},
+"EM-S5":{l:"L3 EM · S5",f:"L3 EM",lv:"L3 EM",u:[
+{b:"Bloc 1",u:"Didactique approfondie / Sc. éducation / Éval",th:"Didactique",e:8,t:"CM+TD",d:"Transposition, pédagogie différenciée, grilles"},
+{b:"Bloc 2",u:"Physiologie jeunes / Psycho ado",th:"Sciences",e:6,t:"CM+TD",d:"Puberté, image corporelle"},
+{b:"Bloc 3",u:"Technologie APSA + Polyvalence scolaire",th:"APSA",e:8,t:"CM+TD+TP",d:"Logique interne APSA, sports co/athlé/gym"},
+{b:"Bloc 4",u:"Stage scolaire + Projet CAPEPS + Anglais",th:"Stage+Pro",e:8,t:"Stage+TD",d:"18h/6sem, prépa concours"},
+]},
+"EM-S6":{l:"L3 EM · S6",f:"L3 EM",lv:"L3 EM",u:[
+{b:"Bloc 1",u:"Didactique + Culture scolaire EPS",th:"Didactique",e:6,t:"CM+TD",d:"Programmes officiels, évaluation EPS"},
+{b:"Bloc 2",u:"Sciences vie + SHS éducation",th:"Sciences+SHS",e:6,t:"CM+TD",d:"Santé école, gestion classe, inclusion"},
+{b:"Bloc 3",u:"Techno APSA avancée + Polyvalence",th:"APSA",e:8,t:"CM+TD+TP",d:"Cycle enseignement, éval certificative"},
+{b:"Bloc 4",u:"Stage responsabilité + Anglais",th:"Stage",e:10,t:"Stage+TD",d:"60h/12sem intervention responsabilité"},
+]},
+"ES-S4":{l:"L3 Entraînement Sportif · S4",f:"L3 ES",lv:"L3 ES",u:[
+{b:"Bloc 1",u:"Psycho perf / Socio compétition / Stats / Vidéo",th:"Analyse",e:7,t:"CM+TD",d:"Flow, dopage social, Kinovea, data"},
+{b:"Bloc 2",u:"Physio entraînement / Biomécanique / Anatomie",th:"Sciences",e:6,t:"CM+TD",d:"Périodisation, cinétique, renforcement"},
+{b:"Bloc 3",u:"Spécialité + Polyvalences",th:"Pratique",e:8,t:"TP",d:"Prépa physique, musculation"},
+{b:"Bloc 4",u:"Qualités physiques + Stage + Anglais",th:"Multi",e:9,t:"CM+TD+Stage",d:"Force/vitesse/endurance, club sportif"},
+]},
+"ES-S5":{l:"L3 ES · S5",f:"L3 ES",lv:"L3 ES",u:[
+{b:"Bloc 1",u:"Préparation mentale / Analyse performance",th:"Perf",e:6,t:"CM+TD+TP",d:"Imagerie, GPS, accéléromètres"},
+{b:"Bloc 2",u:"Physio musculaire / Nutrition / Traumatologie",th:"Sciences",e:10,t:"CM+TD",d:"Fibres, macronutriments, blessures"},
+{b:"Bloc 3",u:"Planification entraînement + Polyvalence",th:"Entraînement",e:8,t:"CM+TD+TP",d:"Périodisation, charge, monitoring"},
+{b:"Bloc 4",u:"Stage entraînement + Anglais",th:"Stage",e:6,t:"Stage+TD",d:"Structure pro/amateur"},
+]},
+"ES-S6":{l:"L3 ES · S6",f:"L3 ES",lv:"L3 ES",u:[
+{b:"Bloc 1",u:"Méthodologie recherche / Management club",th:"Méthodo+Mgmt",e:4,t:"CM+TD",d:"Protocole, gestion club"},
+{b:"Bloc 2",u:"Développement qualités / Récupération suivi",th:"Entraînement",e:8,t:"CM+TD+TP",d:"Force/vitesse, sommeil, surmenage"},
+{b:"Bloc 3",u:"Conception programmes + Polyvalence",th:"Entraînement",e:8,t:"CM+TD+TP",d:"Programmation annuelle, terrain"},
+{b:"Bloc 4",u:"Stage long + Anglais",th:"Stage",e:10,t:"Stage+TD",d:"Responsabilité entraînement"},
+]},
+"MS-S4":{l:"L3 Management Sport · S4",f:"L3 MS",lv:"L3 MS",u:[
+{b:"Bloc 1",u:"Marketing / Économie / Stats / Droit sport",th:"Gestion",e:7,t:"CM+TD",d:"Mix marketing, marchés sportifs, juridique"},
+{b:"Bloc 2",u:"Gestion comptable / Communication OS",th:"Com+Compta",e:6,t:"CM+TD",d:"Budget, réseaux sociaux, RP"},
+{b:"Bloc 3",u:"Pratique sportive + Polyvalences",th:"Pratique",e:8,t:"TP",d:"3 polyvalences"},
+{b:"Bloc 4",u:"Anglais business + Stage + Qualités physiques",th:"Multi",e:9,t:"TD+Stage",d:"Business English, club/fédé"},
+]},
+"MS-S5":{l:"L3 MS · S5",f:"L3 MS",lv:"L3 MS",u:[
+{b:"Bloc 1 Conso",u:"Appel d'offre / Analyse quali-quanti",th:"Études marché",e:8,t:"CM+TD",d:"Marchés publics, focus groups, SPSS"},
+{b:"Bloc 2 Gestion",u:"Stratégie / Marketing / Com / Budget",th:"Management",e:8,t:"CM+TD",d:"SWOT, Porter, CRM, plan com"},
+{b:"Bloc 3 Événementiel",u:"DD / Projet événementiel / Gestion événements",th:"Événementiel",e:8,t:"CM+TD+TP",d:"ISO 20121, Gantt, logistique, sécurité"},
+{b:"Bloc 4",u:"Pro + Anglais + Stage",th:"Multi",e:6,t:"TD+Stage",d:"Networking, présentations pro"},
+]},
+"MS-S6":{l:"L3 MS · S6",f:"L3 MS",lv:"L3 MS",u:[
+{b:"Blocs 1-4",u:"Approfondissement modules S5",th:"Multi",e:22,t:"CM+TD+TP",d:"Marketing, gestion, événementiel approfondis"},
+{b:"Bloc 4",u:"Stage / Alternance long",th:"Stage",e:8,t:"Stage",d:"Responsabilité ou alternance"},
+]},
+"EOPS-S7":{l:"Master EOPS · S7 (M1)",f:"Master EOPS",lv:"M1",u:[
+{b:"Bloc 1 Concevoir",u:"Méthodologie entraînement / Prépa mentale",th:"Entraînement+Psycho",e:6,t:"CM+TD+TP",d:"Macro/méso/micro, techniques mentales"},
+{b:"Bloc 2 Évaluer",u:"Éval musculaire / Éval énergétique / Veille",th:"Évaluation",e:10,t:"CM+TD+TP",d:"Isocinétisme, EMG, VO2max, lactate"},
+{b:"Bloc 3 Environnement",u:"Compta-Gestion / Marketing sportif",th:"Gestion",e:8,t:"CM+TD",d:"Business plan, sponsoring, merchandising"},
+{b:"Bloc 4",u:"Projets tutorés",th:"Projet",e:3,t:"TD+TP",d:"Projet terrain club/fédé"},
+]},
+"EOPS-S8":{l:"Master EOPS · S8 (M1)",f:"Master EOPS",lv:"M1",u:[
+{b:"Bloc 5",u:"Entraînement / Nutrition-Dopage / Suivi médical",th:"Perf+Santé",e:9,t:"CM+TD+TP",d:"Séance terrain, AUT, AFLD, bilan médical"},
+{b:"Bloc 6",u:"Outils numériques / Spécialité / Veille",th:"Numérique",e:8,t:"TD+TP",d:"Data sport, GPS, bibliométrie"},
+{b:"Bloc 7",u:"GRH / Droit-Fiscalité",th:"Management",e:7,t:"CM+TD",d:"Leadership, droit sportif, fiscalité"},
+{b:"Bloc 8",u:"Stage + Mémoire recherche",th:"Recherche",e:6,t:"Stage",d:"Structure + mémoire"},
+]},
+"DEUST-S1":{l:"DEUST Football · S1",f:"DEUST Animation Football",lv:"DEUST 1",u:[
+{b:"UE 11",u:"Fondements théoriques animation",th:"Animation",e:5,t:"CM+TD",d:"Théorie animation sportive, pédagogie"},
+{b:"UE 14",u:"Pratique football + gardien de but",th:"Football",e:5,t:"TP",d:"Pratique foot, animation gardien, spécialité"},
+{b:"BMF UC1",u:"Séance animation U8-U11",th:"BMF",e:5,t:"TP",d:"Animation jeunes U8-U11 en sécurité"},
+{b:"Stage",u:"Alternance en club",th:"Stage",e:5,t:"Stage",d:"Animation en club de football"},
+]},
+"DEUST-S2":{l:"DEUST Football · S2",f:"DEUST Animation Football",lv:"DEUST 1",u:[
+{b:"UE 23",u:"Milieu institutionnel + arbitrage",th:"Institutionnel",e:5,t:"CM+TD",d:"Cadre réglementaire football, arbitrage"},
+{b:"UE 24",u:"Football + foot fitness",th:"Football diversifié",e:5,t:"TP",d:"Foot, spécialité, foot fitness"},
+{b:"BMF UC2",u:"Séance animation U12-U15",th:"BMF",e:5,t:"TP",d:"Animation jeunes U12-U15 en sécurité"},
+{b:"Stage",u:"Alternance club (gestion)",th:"Stage",e:5,t:"Stage",d:"Gestion associative"},
+]},
+"DEUST-S3":{l:"DEUST Football · S3",f:"DEUST Animation Football",lv:"DEUST 2",u:[
+{b:"UE 31",u:"Activité physique et santé foot",th:"Santé foot",e:5,t:"CM+TD",d:"Traumatologie footballeur, prépa physique"},
+{b:"UE 34",u:"Football diversifié",th:"Foot diversifié",e:5,t:"TP",d:"Futsal, foot loisirs, golf foot, foot marchant"},
+{b:"BMF UC3",u:"Séance animation U16-Séniors",th:"BMF",e:5,t:"TP",d:"Animation U16-séniors en sécurité"},
+{b:"Stage",u:"Alternance animation + gestion",th:"Stage",e:5,t:"Stage",d:""},
+]},
+"DEUST-S4":{l:"DEUST Football · S4",f:"DEUST Animation Football",lv:"DEUST 2",u:[
+{b:"UE 42",u:"Analyse de l'animateur",th:"Analyse",e:5,t:"CM+TD",d:"Observation jeune footballeur, analyse situation"},
+{b:"UE 44",u:"Football diversifié avancé",th:"Foot diversifié",e:5,t:"TP",d:"Pratique diversifiée, spécialité"},
+{b:"BMF UC4",u:"Projet de club / structure",th:"BMF Projet",e:5,t:"TD+TP",d:"Mise en œuvre projet club, responsabilités"},
+{b:"BMF",u:"Module Santé-Sécurité-Arbitrage",th:"BMF Santé",e:5,t:"CM+TD",d:"Premiers secours, arbitrage football"},
+]},
+"LP-DU":{l:"Licences Pro & DU",f:"LP & DU",lv:"LP/DU",u:[
+{b:"LP",u:"LP AGOAPS Football",th:"Animation foot",e:60,t:"CM+TD+TP+Stage",d:"1 an alternance"},
+{b:"LP",u:"LP GPSAC",th:"Projets culturels",e:60,t:"CM+TD+Stage",d:"1 an alternance"},
+{b:"LP",u:"LP Tourisme Loisirs Sportifs",th:"Tourisme",e:60,t:"CM+TD+Stage",d:"1 an alternance"},
+{b:"DU",u:"DU AGDA / DU OHPCo / DU Prépa Physique",th:"DU spécialisés",e:0,t:"CM+TD+TP",d:"Formation continue"},
+]},
+};
+
+const GR=[
+{id:"tc",n:"Tronc Commun L1-L2",c:"#3b82f6",k:["TC-S1","TC-S2","TC-S3"]},
+{id:"apas",n:"L3 APAS",c:"#22c55e",k:["APAS-S4","APAS-S5","APAS-S6"]},
+{id:"em",n:"L3 Éducation Motricité",c:"#a855f7",k:["EM-S4","EM-S5","EM-S6"]},
+{id:"es",n:"L3 Entraînement Sportif",c:"#f97316",k:["ES-S4","ES-S5","ES-S6"]},
+{id:"ms",n:"L3 Management Sport",c:"#eab308",k:["MS-S4","MS-S5","MS-S6"]},
+{id:"eops",n:"Master EOPS",c:"#ec4899",k:["EOPS-S7","EOPS-S8"]},
+{id:"deust",n:"DEUST Football (FFF/BMF)",c:"#06b6d4",k:["DEUST-S1","DEUST-S2","DEUST-S3","DEUST-S4"]},
+{id:"lpdu",n:"LP & DU",c:"#14b8a6",k:["LP-DU"]},
+];
+
+const SP=["Football","Rugby","Basketball","Handball","Volleyball","Tennis","Athlétisme","Natation","Gymnastique","Danse","Arts martiaux","Escalade","Badminton","Musculation/Fitness","Sports adaptés","Futsal","Golf foot","Foot fitness","Foot marchant","Cyclisme","Triathlon"];
+const CT=[{id:"cm",n:"CM",i:"🎓"},{id:"td",n:"TD",i:"📝"},{id:"tp",n:"TP",i:"🏃"},{id:"cas",n:"Cas Pratique",i:"🧩"},{id:"groupe",n:"Groupe",i:"👥"},{id:"eval",n:"Évaluation",i:"✅"},{id:"seance",n:"Séance Sport",i:"⚡"},{id:"hybride",n:"Hybride",i:"🔄"}];
+const OO=[{id:"schemas",n:"Schémas"},{id:"organigrammes",n:"Organigrammes"},{id:"tableaux",n:"Tableaux"},{id:"cas_concrets",n:"Cas concrets"},{id:"exercices",n:"Exercices"},{id:"quiz",n:"Quiz/QCM"},{id:"bibliographie",n:"Bibliographie"},{id:"fiches",n:"Fiches synthèse"}];
+
+async function ppx(p){try{const r=await fetch("https://api.perplexity.ai/chat/completions",{method:"POST",headers:{"Authorization":`Bearer ${PK}`,"Content-Type":"application/json"},body:JSON.stringify({model:"sonar-pro",messages:[{role:"system",content:"Expert STAPS, pédagogie universitaire, formation sportive France. Toujours sourcé."},{role:"user",content:p}],max_tokens:4000,temperature:.3,return_citations:true})});const d=await r.json();return{c:d.choices?.[0]?.message?.content||"",s:d.citations||[]};}catch(e){return{c:"",s:[]};}}
+async function cl(s, u, files=[]){
+  try {
+    // Build multimodal content: text + attached files (PDF/images)
+    const content = [];
+    for (const f of files) {
+      if (f.type === "application/pdf") {
+        content.push({type:"document",source:{type:"base64",media_type:"application/pdf",data:f.data}});
+        content.push({type:"text",text:`[Document joint: "${f.name}" — Utilise ce document comme référence pour enrichir le cours]`});
+      } else if (f.type.startsWith("image/")) {
+        content.push({type:"image",source:{type:"base64",media_type:f.type,data:f.data}});
+        content.push({type:"text",text:`[Image jointe: "${f.name}" — Décris et intègre cette ressource visuelle dans le cours]`});
+      } else {
+        // text/csv/json/etc: include as text
+        content.push({type:"text",text:`[Fichier joint: "${f.name}"]\n${f.text||"(contenu binaire non lisible)"}`});
+      }
+    }
+    content.push({type:"text",text:u});
+    const r = await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","x-api-key":CK,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:MODEL,max_tokens:8000,system:s,messages:[{role:"user",content: files.length > 0 ? content : u}]})
+    });
+    const d = await r.json();
+    return d.content?.[0]?.text || d.error?.message || "Erreur";
+  } catch(e){return "Erreur: "+e.message;}
+}
+
+// ── File reading helpers ──
+function readFileAsBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.split(",")[1]);
+    r.onerror = () => rej(new Error("Lecture échouée"));
+    r.readAsDataURL(file);
+  });
+}
+function readFileAsText(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(new Error("Lecture échouée"));
+    r.readAsText(file);
+  });
+}
+async function processFile(file) {
+  const isPdf = file.type === "application/pdf";
+  const isImage = file.type.startsWith("image/");
+  const isText = file.type.startsWith("text/") || file.name.endsWith(".md") || file.name.endsWith(".json") || file.name.endsWith(".csv");
+  if (isPdf || isImage) {
+    const data = await readFileAsBase64(file);
+    return {name: file.name, type: file.type, data, size: file.size};
+  } else if (isText) {
+    const text = await readFileAsText(file);
+    return {name: file.name, type: file.type, text, size: file.size};
+  } else {
+    // Try as text
+    try { const text = await readFileAsText(file); return {name: file.name, type: "text/plain", text, size: file.size}; }
+    catch { return {name: file.name, type: file.type, text: "(format non supporté)", size: file.size}; }
+  }
+}
+
+function App(){
+const[pg,setPg]=useState("home");
+const[semK,setSemK]=useState(null);
+const[selUE,setSelUE]=useState(null);
+const[cp,setCp]=useState({theme:"",dur:"1h30",ct:["cm"],sport:"",nb:"30",age:"18-22",lvl:"L1",obj:"",needs:"",opts:["schemas","cas_concrets","bibliographie"],cust:"",
+  nbCours:1,
+  dateCours:"", // date à laquelle le cours sera dispensé (manuelle)
+  promoCours:"", // promo destinataire (manuelle)
+});
+const[courses,setCourses]=useState(()=>{try{return JSON.parse(localStorage.getItem("staps_courses"))||[];}catch{return[];}}); // persisted
+useEffect(()=>{try{localStorage.setItem("staps_courses",JSON.stringify(courses));}catch{}},[courses]);
+const[busy,setBusy]=useState(false);
+const[step,setStep]=useState("");
+const[edit,setEdit]=useState("");
+const[editing,setEditing]=useState(false);
+const[hist,setHist]=useState(()=>{try{return JSON.parse(localStorage.getItem("staps_hist"))||[];}catch{return[];}});
+useEffect(()=>{try{localStorage.setItem("staps_hist",JSON.stringify(hist));}catch{}},[hist]);
+const[histFilter,setHistFilter]=useState("all"); // promo filter
+const[histSort,setHistSort]=useState("newest"); // newest or oldest
+const[evalM,setEvalM]=useState(false);
+const[seanceM,setSeanceM]=useState(false);
+const[openG,setOpenG]=useState(null);
+const[openS,setOpenS]=useState(null);
+const[activeC,setActiveC]=useState(0); // which course is displayed
+const[viewMode,setViewMode]=useState("slides"); // "slides" or "text"
+// Students / Groups for differentiated eval
+const[students,setStudents]=useState(()=>{try{return JSON.parse(localStorage.getItem("staps_students"))||[];}catch{return[];}});
+const[groups,setGroups]=useState(()=>{try{return JSON.parse(localStorage.getItem("staps_groups"))||[];}catch{return[];}});
+useEffect(()=>{try{localStorage.setItem("staps_students",JSON.stringify(students));}catch{}},[students]);
+useEffect(()=>{try{localStorage.setItem("staps_groups",JSON.stringify(groups));}catch{}},[groups]);
+const[showStudents,setShowStudents]=useState(false);
+const[newSt,setNewSt]=useState({nom:"",sport:"",age:"",niveau:"",groupe:""});
+const[newGrp,setNewGrp]=useState("");
+// File attachments
+const[createFiles,setCreateFiles]=useState([]); // files for course generation
+const[editFiles,setEditFiles]=useState([]); // files for course editing
+const createFileRef=useRef(null);
+const editFileRef=useRef(null);
+// Réglage clés API (stockées dans le navigateur)
+const[showKeys,setShowKeys]=useState(!CK); // ouvre le réglage au 1er lancement si pas de clé
+const[ckIn,setCkIn]=useState(CK);
+const[pkIn,setPkIn]=useState(PK);
+function saveKeys(){
+  CK=ckIn.trim(); PK=pkIn.trim();
+  try{localStorage.setItem("staps_ck",CK);localStorage.setItem("staps_pk",PK);}catch{}
+  setShowKeys(false);
+}
+function clearKeys(){
+  CK="";PK="";setCkIn("");setPkIn("");
+  try{localStorage.removeItem("staps_ck");localStorage.removeItem("staps_pk");}catch{}
+}
+
+async function handleFiles(fileList, setter) {
+  const processed = [];
+  for (const f of Array.from(fileList)) {
+    if (f.size > 20*1024*1024) { alert(`⚠️ ${f.name} trop volumineux (max 20 Mo)`); continue; }
+    try { const p = await processFile(f); processed.push(p); } catch(e) { console.error(e); }
+  }
+  setter(prev => [...prev, ...processed]);
+}
+function removeFile(idx, setter) { setter(prev => prev.filter((_,i) => i !== idx)); }
+
+function pickUE(k,ue){setSemK(k);setSelUE(ue);const s=DB[k];const tm={"CM+TD":["cm","td"],"CM+TD+TP":["cm","td","tp"],"TD":["td"],"TP":["tp"],"Stage":["tp"],"CM":["cm"],"TD+TP":["td","tp"],"CM+TD+Stage":["cm","td"],"Stage+CM":["cm"],"Stage+TD":["td"],"TD+Stage":["td"]};setCp(p=>({...p,theme:ue.u+(ue.d?` — ${ue.d}`:""),ct:tm[ue.t]||["cm"],lvl:s.lv}));setPg("create");}
+
+function openFromHistory(entry){
+  if(entry.courses&&entry.courses.length>0){
+    setCourses(entry.courses);
+    setActiveC(0);
+    setPg("result");
+  }
+}
+function deleteFromHistory(id){setHist(h=>h.filter(x=>x.id!==id));}
+function updateHistEntry(id, field, value){setHist(h=>h.map(x=>x.id===id?{...x,[field]:value}:x));}
+
+function addStudent(){if(!newSt.nom)return;setStudents(s=>[...s,{...newSt,id:Date.now()}]);setNewSt({nom:"",sport:"",age:"",niveau:"",groupe:""});}
+function addGroup(){if(!newGrp)return;setGroups(g=>[...g,newGrp]);setNewGrp("");}
+function removeStudent(id){setStudents(s=>s.filter(x=>x.id!==id));}
+
+async function generate(){
+  if(!cp.theme)return;
+  if(!CK){alert("⚙️ Configure d'abord ta clé API Claude (bouton ⚙️ Clés API en haut à droite).");setShowKeys(true);return;}
+  setBusy(true);setCourses([]);
+  const n=Math.max(1,Math.min(10,parseInt(cp.nbCours)||1));
+  try{
+    setStep(`🔍 Perplexity — Recherche sources...`);
+    const px=await ppx(`Recherche sourcée STAPS: "${cp.theme}" niveau ${cp.lvl}. ${cp.sport?`Sport: ${cp.sport}.`:""}${selUE?`UE: ${selUE.u}, ${selUE.d}`:""} Fournis connaissances clés AVEC références. CITE SYSTÉMATIQUEMENT.`);
+    
+    const allCourses=[];
+    for(let i=0;i<n;i++){
+      setStep(`🧠 Claude — Cours ${i+1}/${n}...`);
+      const ueI=selUE?`\nUE: ${selUE.u}\nBloc: ${selUE.b}\nThème: ${selUE.th}\nECTS: ${selUE.e}\nType: ${selUE.t}\nContenu: ${selUE.d}`:"";
+      const studentsCtx=students.length>0?`\n\nSTAGIAIRES (${students.length}):\n${students.map(s=>`- ${s.nom} | Sport: ${s.sport} | Âge: ${s.age} | Niveau: ${s.niveau} | Groupe: ${s.groupe}`).join('\n')}`:"";
+      const groupsCtx=groups.length>0?`\nGROUPES: ${groups.join(', ')}`:"";
+      
+      const courseNum = n>1 ? `\n\nCOURS ${i+1}/${n} d'une SÉQUENCE de ${n} cours de ${cp.dur} chacun. ${i===0?"C'est le premier cours, commence par les bases.":i===n-1?"C'est le dernier cours, fais la synthèse et l'évaluation finale.":"Continue la progression logique depuis le cours précédent."} Chaque cours doit être DIFFÉRENT et suivre une PROGRESSION pédagogique cohérente.` : "";
+      
+      const evalDiff = (evalM && students.length>0) ? `\n\nÉVALUATION DIFFÉRENCIÉE: Génère des évaluations ADAPTÉES aux profils des stagiaires. ${groups.length>0?`Propose des variantes par groupe (${groups.join(', ')}).`:"Propose des variantes par niveau."} Adapte la difficulté, les exemples sportifs, et les cas pratiques au sport et niveau de chaque stagiaire/groupe.` : "";
+
+      const filesCtx = createFiles.length > 0 ? `\n\nDOCUMENTS JOINTS (${createFiles.length} fichiers) — Utilise ces documents comme références, sources, et matériel pour enrichir le cours. Cite-les quand pertinent.` : "";
+
+      const prompt=`UFR STAPS Bourgogne 2025-2026\n${DB[semK]?.f||""} · ${DB[semK]?.l||""}${ueI}\nThème: ${cp.theme}\nDurée: ${cp.dur}\nTypes de cours: ${cp.ct.map(id=>CT.find(x=>x.id===id)?.n).filter(Boolean).join(" + ")}\nSport: ${cp.sport||"Général"}\nÉtudiants: ${cp.nb} · Âge: ${cp.age}\nNiveau: ${cp.lvl}\nÉléments: ${cp.opts.map(id=>OO.find(o=>o.id===id)?.n).join(", ")}${cp.cust?`\nInstructions: ${cp.cust}`:""}${courseNum}${studentsCtx}${groupsCtx}${evalM?"\nMODE ÉVALUATION activé"+evalDiff:""}${seanceM?"\nMODE SÉANCE SPORTIVE: fiche terrain complète":""}${filesCtx}`;
+      
+      const r=await cl(
+        `Expert ingénierie pédagogique STAPS. Cours universitaire haute qualité, TOUT sourcé.
+
+RÈGLES VISUELLES — TRÈS IMPORTANT:
+- Pour les schémas, utilise: [SCHÉMA: Élément1 → Élément2 → Élément3] (flèches → entre chaque étape)
+- Pour les organigrammes: [ORGANIGRAMME: Titre principal — Branche1 — Branche2 — Branche3] (tirets — entre niveaux)
+- Pour les tableaux: utilise le format markdown |col1|col2|col3| avec ligne de séparation |---|---|---|
+- Mets des encadrés importants avec > citation
+- Numérote les étapes 1. 2. 3. pour les processus
+- Ajoute des sous-titres ### pour structurer chaque section
+- GÉNÈRE AU MINIMUM 3 schémas et 1 organigramme par cours
+
+Objectifs pédagogiques par section. Biblio complète sourcée.${n>1?` Tu génères le cours ${i+1} d'une séquence de ${n} cours progressifs.`:""}${createFiles.length>0?" Des documents de référence sont joints : exploite-les au maximum pour enrichir le cours, cite les auteurs et données qu'ils contiennent.":""}`,
+        `${prompt}\n\nRECHERCHE PERPLEXITY:\n${px.c}\n${px.s.length?`SOURCES:\n${px.s.map((c,j)=>`[${j+1}] ${c}`).join('\n')}`:""}\nGénère cours COMPLET, RICHE, SOURCÉ.`,
+        createFiles
+      );
+      allCourses.push({content:r,sources:px.s,ts:new Date().toISOString(),num:i+1,total:n,semL:DB[semK]?.l,ue:selUE?.u});
+    }
+    setCourses(allCourses);
+    setActiveC(0);
+    setHist(h=>[...h,{
+      id:Date.now(),
+      theme:cp.theme,
+      ct:cp.ct,
+      date:new Date().toISOString(),
+      dateLabel:new Date().toLocaleString("fr-FR",{day:"2-digit",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"}),
+      dateCours:cp.dateCours||"",
+      promoCours:cp.promoCours||"",
+      promo:cp.lvl,
+      formation:DB[semK]?.f||"",
+      semester:DB[semK]?.l||"",
+      ue:selUE?.u||"",
+      sport:cp.sport||"",
+      duration:cp.dur,
+      nbCours:n,
+      courses:allCourses,
+    }]);
+    setPg("result");
+  }catch(e){setCourses([{content:`❌ ${e.message}`,sources:[],ts:new Date().toISOString(),num:1,total:1}]);setPg("result");}
+  setBusy(false);setStep("");
+}
+
+async function doEdit(){if(!edit||!courses[activeC])return;setEditing(true);try{
+  const editCtx = editFiles.length > 0 ? `\n\nDOCUMENTS JOINTS pour la modification (${editFiles.length} fichiers) — Utilise ces documents pour enrichir/modifier le cours.` : "";
+  const r=await cl(
+    `Expert STAPS. Modifie le cours selon la demande. Renvoie COMPLET modifié. Garde qualité, structure et sources.${editFiles.length>0?" Des documents de référence sont joints : intègre-les dans la modification.":""}`,
+    `COURS ACTUEL:\n${courses[activeC].content}\n\nMODIFICATION DEMANDÉE:\n${edit}${editCtx}\n\nRenvoie le cours COMPLET modifié.`,
+    editFiles
+  );
+  setCourses(c=>{const nc=[...c];nc[activeC]={...nc[activeC],content:r};return nc;});setEdit("");setEditFiles([]);
+}catch(e){alert(e.message);}setEditing(false);}
+
+// ── EXPORT functions ──
+function buildExportJSON(){
+  return JSON.stringify({
+    type:"STAPS_IMPORT",
+    cours: courses.map((c,i)=>({
+      num:i+1,
+      theme:cp.theme,
+      duration:cp.dur,
+      level:cp.lvl,
+      sport:cp.sport,
+      formation:DB[semK]?.f||"",
+      semester:DB[semK]?.l||"",
+      ue:selUE?.u||"",
+      content:c.content,
+      sources:c.sources,
+      generated:c.ts,
+    })),
+    students: students.map(s=>({nom:s.nom,sport:s.sport,age:s.age,niveau:s.niveau,groupe:s.groupe})),
+    groups,
+    meta:{app:"STAPS Course Studio v4",target:"Ophélie CUYNET - Staps (appli suite)",exported:new Date().toISOString(),nbCours:courses.length}
+  },null,2);
+}
+
+function exportJSON(){
+  const json=buildExportJSON();
+  const blob=new Blob([json],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=`staps_cours_${cp.theme.replace(/\s+/g,'_').substring(0,30)}.json`;a.click();
+}
+
+function exportPostMessage(){
+  const data=JSON.parse(buildExportJSON());
+  if(window.opener){window.opener.postMessage(data,"*");alert("✅ Envoyé via postMessage → appli STAPS suite !");}
+  else if(window.parent!==window){window.parent.postMessage(data,"*");alert("✅ Envoyé via postMessage → appli STAPS suite !");}
+  else{alert("⚠️ Pas de fenêtre parente détectée. Utilisez l'export JSON ou URL.");} 
+}
+
+function exportURL(){
+  const data=buildExportJSON();
+  const encoded=encodeURIComponent(btoa(unescape(encodeURIComponent(data))));
+  const url=`?cours=${encoded}`;
+  navigator.clipboard.writeText(window.location.origin+window.location.pathname+url);
+  alert("✅ URL copiée dans le presse-papiers !");
+}
+
+function exportMD(){
+  const all=courses.map((c,i)=>`${"=".repeat(60)}\nCOURS ${i+1}/${courses.length}\n${"=".repeat(60)}\n\n${c.content}`).join('\n\n\n');
+  const blob=new Blob([all],{type:"text/markdown"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=`cours_${cp.theme.replace(/\s+/g,'_').substring(0,30)}.md`;a.click();
+}
+
+// ── SVG generators ──
+function genFlowSVG(items, colors){
+  const w=Math.min(items.length*160+40,700), h=90;
+  const bw=120, bh=40, gap=(w-40)/(items.length);
+  const cols=colors||["#f97316","#3b82f6","#22c55e","#a855f7","#ec4899","#eab308","#14b8a6","#ef4444"];
+  return `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-height:100px">
+    <defs><filter id="fs"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity=".15"/></filter></defs>
+    ${items.map((it,i)=>{
+      const x=20+i*gap, c=cols[i%cols.length];
+      return `<g filter="url(#fs)"><rect x="${x}" y="20" width="${bw}" height="${bh}" rx="8" fill="${c}" opacity=".9"/>
+      <text x="${x+bw/2}" y="44" text-anchor="middle" fill="#fff" font-size="10" font-weight="600" font-family="Outfit,sans-serif">${it.length>16?it.substring(0,15)+'…':it}</text></g>
+      ${i<items.length-1?`<line x1="${x+bw+4}" y1="40" x2="${x+gap-4}" y2="40" stroke="#8899b5" stroke-width="2" marker-end="url(#ah)"/>`:''}`;
+    }).join('')}
+    <defs><marker id="ah" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#8899b5"/></marker></defs>
+  </svg>`;
+}
+
+function genTreeSVG(root, children){
+  const n=children.length, w=Math.max(n*140+40,300), h=140;
+  const cols=["#3b82f6","#22c55e","#a855f7","#f97316","#ec4899","#eab308","#14b8a6","#ef4444"];
+  return `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-height:150px">
+    <defs><filter id="ts"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity=".15"/></filter></defs>
+    <g filter="url(#ts)"><rect x="${w/2-70}" y="8" width="140" height="36" rx="18" fill="#f97316"/>
+    <text x="${w/2}" y="30" text-anchor="middle" fill="#fff" font-size="11" font-weight="700" font-family="Outfit,sans-serif">${root.length>20?root.substring(0,19)+'…':root}</text></g>
+    ${children.map((c,i)=>{
+      const x=20+i*((w-40)/n), col=cols[i%cols.length];
+      return `<line x1="${w/2}" y1="44" x2="${x+55}" y2="70" stroke="${col}" stroke-width="2" opacity=".6"/>
+      <g filter="url(#ts)"><rect x="${x}" y="70" width="110" height="34" rx="8" fill="${col}" opacity=".85"/>
+      <text x="${x+55}" y="91" text-anchor="middle" fill="#fff" font-size="9" font-weight="600" font-family="Outfit,sans-serif">${c.length>16?c.substring(0,15)+'…':c}</text></g>`;
+    }).join('')}
+  </svg>`;
+}
+
+function genRadialSVG(center, branches){
+  const n=branches.length, r=85, cx=150, cy=110, w=300, h=220;
+  const cols=["#3b82f6","#22c55e","#a855f7","#f97316","#ec4899","#eab308","#14b8a6","#ef4444"];
+  return `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-height:220px">
+    <defs><filter id="rs"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity=".12"/></filter></defs>
+    ${branches.map((b,i)=>{
+      const angle=(2*Math.PI*i/n)-Math.PI/2, bx=cx+r*Math.cos(angle), by=cy+r*Math.sin(angle), col=cols[i%cols.length];
+      return `<line x1="${cx}" y1="${cy}" x2="${bx}" y2="${by}" stroke="${col}" stroke-width="2" opacity=".4"/>
+      <g filter="url(#rs)"><rect x="${bx-45}" y="${by-15}" width="90" height="30" rx="15" fill="${col}" opacity=".9"/>
+      <text x="${bx}" y="${by+4}" text-anchor="middle" fill="#fff" font-size="8" font-weight="600" font-family="Outfit,sans-serif">${b.length>14?b.substring(0,13)+'…':b}</text></g>`;
+    }).join('')}
+    <g filter="url(#rs)"><circle cx="${cx}" cy="${cy}" r="32" fill="#f97316"/>
+    <text x="${cx}" y="${cy+4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="700" font-family="Outfit,sans-serif">${center.length>14?center.substring(0,13)+'…':center}</text></g>
+  </svg>`;
+}
+
+function parseSchemaItems(text){
+  const clean=text.replace(/^\[SCHÉMA[:\s]*/i,'').replace(/^\[SCHEMA[:\s]*/i,'').replace(/\]$/,'');
+  if(clean.includes('→')||clean.includes('->')) return clean.split(/→|->/).map(s=>s.trim()).filter(Boolean);
+  if(clean.includes(',')) return clean.split(',').map(s=>s.trim()).filter(Boolean);
+  if(clean.includes('—')) return clean.split('—').map(s=>s.trim()).filter(s=>s.length>2);
+  if(clean.includes('/')) return clean.split('/').map(s=>s.trim()).filter(Boolean);
+  return clean.split(/\s{2,}/).map(s=>s.trim()).filter(s=>s.length>2);
+}
+
+function parseOrgItems(text){
+  const clean=text.replace(/^\[ORGANIGRAMME[:\s]*/i,'').replace(/\]$/,'');
+  const parts=clean.includes('—')?clean.split('—').map(s=>s.trim()):clean.includes(':')? clean.split(':').map(s=>s.trim()):clean.split(',').map(s=>s.trim());
+  return {root: parts[0]||"Organisation", children: parts.slice(1).length>0?parts.slice(1):["Élément 1","Élément 2","Élément 3"]};
+}
+
+// ── Inline bold renderer ──
+function renderInline(text){
+  const parts=text.split(/\*\*(.*?)\*\*/g);
+  return parts.map((p,i)=> i%2===1 ? <strong key={i} style={{color:"#fdba74"}}>{p}</strong> : p);
+}
+
+// ── Parse markdown table ──
+function parseTable(lines){
+  const rows=lines.map(l=>l.split('|').map(c=>c.trim()).filter(Boolean));
+  if(rows.length<2) return null;
+  const header=rows[0];
+  const body=rows.filter((_,i)=>i>0&&!rows[i].every(c=>/^[-:]+$/.test(c)));
+  return {header,body};
+}
+
+// ── Section icons ──
+const secIcons={"introduction":"💡","intro":"💡","accroche":"🎯","objectif":"🎯","information":"ℹ️","corps":"📖","activit":"🏃","exercice":"✏️","synthèse":"📌","synthese":"📌","point":"📌","évaluation":"✅","evaluation":"✅","bibliographie":"📚","ressource":"🔗","conclusion":"🏁"};
+function getSectionIcon(title){
+  const t=title.toLowerCase();
+  for(const[k,v] of Object.entries(secIcons)) if(t.includes(k)) return v;
+  return "📘";
+}
+const secColors=["#3b82f6","#22c55e","#a855f7","#f97316","#ec4899","#eab308","#14b8a6","#ef4444","#6366f1","#0ea5e9"];
+
+// ── RICH RENDERER ──
+function RichRenderer({text, mode}){
+  if(!text) return null;
+  if(mode==="text") return <TextRenderer text={text}/>;
+  
+  const lines=text.split('\n');
+  const sections=[];
+  let current=null;
+  
+  lines.forEach(l=>{
+    if(l.startsWith('# ')){
+      sections.push({type:'title',text:l.slice(2)});
+    } else if(l.startsWith('## ')){
+      if(current) sections.push(current);
+      current={type:'section',title:l.slice(3),lines:[]};
+    } else if(current){
+      current.lines.push(l);
+    } else {
+      if(!sections.find(s=>s.type==='intro')) sections.push({type:'intro',lines:[l]});
+      else { const intro=sections.find(s=>s.type==='intro'); if(intro) intro.lines.push(l); }
+    }
+  });
+  if(current) sections.push(current);
+
+  let secIdx=0;
+  return (
+    <div className="rich-view">
+      {sections.map((sec,si)=>{
+        if(sec.type==='title') return (
+          <div key={si} className="rv-title-card">
+            <div className="rv-title-icon">🎓</div>
+            <h1 className="rv-title">{sec.text}</h1>
+            <div className="rv-title-sub">UFR STAPS Bourgogne · Ophélie CUYNET</div>
+          </div>
+        );
+        if(sec.type==='intro') return (
+          <div key={si} className="rv-intro-card">
+            {sec.lines.map((l,i)=> l.trim() ? <p key={i} className="rv-p">{renderInline(l)}</p> : null)}
+          </div>
+        );
+        const color=secColors[secIdx%secColors.length];
+        secIdx++;
+        const icon=getSectionIcon(sec.title);
+        
+        return (
+          <div key={si} className="rv-card" style={{"--card-color":color}}>
+            <div className="rv-card-header">
+              <span className="rv-card-icon">{icon}</span>
+              <h2 className="rv-card-title">{sec.title}</h2>
+              <div className="rv-card-accent" style={{background:color}}/>
+            </div>
+            <div className="rv-card-body">
+              {renderSectionLines(sec.lines, color)}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderSectionLines(lines, color){
+  const elements=[];
+  let tableLines=[];
+  let inTable=false;
+  
+  lines.forEach((l,i)=>{
+    // Table accumulation
+    if(l.startsWith('|')){
+      inTable=true; tableLines.push(l); return;
+    } else if(inTable){
+      const tbl=parseTable(tableLines);
+      if(tbl) elements.push(<RichTable key={`t${i}`} data={tbl} color={color}/>);
+      tableLines=[]; inTable=false;
+    }
+    
+    if(l.startsWith('### ')) elements.push(<h3 key={i} className="rv-h3"><span className="rv-h3-dot" style={{background:color}}/>{ l.slice(4)}</h3>);
+    else if(l.startsWith('#### ')) elements.push(<h4 key={i} className="rv-h4">{l.slice(5)}</h4>);
+    else if(/^\[SCHÉMA|^\[SCHEMA/i.test(l)){
+      const items=parseSchemaItems(l);
+      if(items.length>=2){
+        if(items.length<=6) elements.push(<div key={i} className="rv-svg-box" dangerouslySetInnerHTML={{__html:genFlowSVG(items)}}/>);
+        else elements.push(<div key={i} className="rv-svg-box" dangerouslySetInnerHTML={{__html:genRadialSVG(items[0],items.slice(1))}}/>);
+      }
+      elements.push(<div key={`d${i}`} className="rv-schema-label">📊 {l.replace(/^\[SCHÉMA[:\s]*/i,'').replace(/^\[SCHEMA[:\s]*/i,'').replace(/\]$/,'')}</div>);
+    }
+    else if(/^\[ORGANIGRAMME/i.test(l)){
+      const org=parseOrgItems(l);
+      elements.push(<div key={i} className="rv-svg-box" dangerouslySetInnerHTML={{__html:genTreeSVG(org.root,org.children)}}/>);
+      elements.push(<div key={`d${i}`} className="rv-org-label">🗂️ {l.replace(/^\[ORGANIGRAMME[:\s]*/i,'').replace(/\]$/,'')}</div>);
+    }
+    else if(/^\[TABLEAU/i.test(l)) elements.push(<div key={i} className="rv-callout" style={{borderLeftColor:"#14b8a6"}}>📋 {l.replace(/^\[TABLEAU[:\s]*/i,'').replace(/\]$/,'')}</div>);
+    else if(l.startsWith('> ')) elements.push(<div key={i} className="rv-callout" style={{borderLeftColor:color}}>💡 {l.slice(2)}</div>);
+    else if(/^[-*] /.test(l)) elements.push(<div key={i} className="rv-li"><span className="rv-bullet" style={{background:color}}/><span>{renderInline(l.slice(2))}</span></div>);
+    else if(/^\d+\.\s/.test(l)){
+      const num=l.match(/^(\d+)\./)[1];
+      elements.push(<div key={i} className="rv-num-item"><span className="rv-num" style={{background:color}}>{num}</span><span>{renderInline(l.replace(/^\d+\.\s*/,''))}</span></div>);
+    }
+    else if(l.startsWith('---')) elements.push(<div key={i} className="rv-divider"/>);
+    else if(l.trim()) elements.push(<p key={i} className="rv-p">{renderInline(l)}</p>);
+  });
+  
+  // flush remaining table
+  if(inTable && tableLines.length>0){
+    const tbl=parseTable(tableLines);
+    if(tbl) elements.push(<RichTable key="tlast" data={tbl} color={color}/>);
+  }
+  
+  return elements;
+}
+
+function RichTable({data, color}){
+  return (
+    <div className="rv-table-wrap">
+      <table className="rv-table">
+        <thead><tr>{data.header.map((h,i)=> <th key={i} style={{borderBottomColor:color}}>{h}</th>)}</tr></thead>
+        <tbody>{data.body.map((row,i)=> <tr key={i}>{row.map((c,j)=> <td key={j}>{c}</td>)}</tr>)}</tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Plain text fallback ──
+function TextRenderer({text}){
+  if(!text) return null;
+  return (
+    <div>{text.split('\n').map((l,i)=>{
+      if(l.startsWith('# ')) return <h1 key={i} className="md-h1">{l.slice(2)}</h1>;
+      if(l.startsWith('## ')) return <h2 key={i} className="md-h2">{l.slice(3)}</h2>;
+      if(l.startsWith('### ')) return <h3 key={i} className="md-h3">{l.slice(4)}</h3>;
+      if(l.startsWith('#### ')) return <h4 key={i} className="md-h4">{l.slice(5)}</h4>;
+      if(/^[-*] /.test(l)) return <li key={i} className="md-li">{l.slice(2)}</li>;
+      if(l.startsWith('> ')) return <blockquote key={i} className="md-bq">{l.slice(2)}</blockquote>;
+      if(l.startsWith('|')) return <div key={i} className="md-tl"><code>{l}</code></div>;
+      if(/^\[SCHÉMA|^\[SCHEMA/i.test(l)) return <div key={i} className="md-schema">📊 {l}</div>;
+      if(/^\[ORGANIGRAMME/i.test(l)) return <div key={i} className="md-org">🗂️ {l}</div>;
+      if(!l.trim()) return <div key={i} style={{height:4}}/>;
+      if(l.startsWith('---')) return <hr key={i} className="md-hr"/>;
+      return <p key={i} className="md-p">{renderInline(l)}</p>;
+    })}</div>
+  );
+}
+
+const total=Object.values(DB).reduce((a,s)=>a+s.u.length,0);
+const cur=courses[activeC];
+
+return(<div className="app"><style>{`
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+.app{min-height:100vh;background:linear-gradient(135deg,#0a0e1a,#0d1525);color:#e8ecf4;font-family:'Outfit',sans-serif}
+.hdr{background:#111827ee;backdrop-filter:blur(16px);border-bottom:1px solid #2a3550;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:100}
+.hdr-l{display:flex;align-items:center;gap:8px}
+.logo{width:32px;height:32px;background:linear-gradient(135deg,#f97316,#eab308);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800}
+.nav{display:flex;gap:2px;flex-wrap:wrap}
+.nb{padding:6px 10px;border-radius:6px;border:none;background:transparent;color:#8899b5;cursor:pointer;font-size:11px;font-weight:500;font-family:inherit}
+.nb:hover{background:#1a2236}.nb.a{background:#f9731620;color:#f97316}.nb.off{opacity:.3;pointer-events:none}
+.mn{padding:16px 20px;max-width:1440px;margin:0 auto}
+.hero{text-align:center;padding:32px 12px 20px}
+.hero-t{font-size:34px;font-weight:800;letter-spacing:-0.03em;line-height:1.1;background:linear-gradient(135deg,#e8ecf4,#f97316,#eab308);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero-d{font-size:13px;color:#8899b5;max-width:540px;margin:12px auto;line-height:1.5}
+.br{display:flex;gap:8px;justify-content:center;margin-top:18px;flex-wrap:wrap}
+.bp{padding:10px 20px;border-radius:8px;border:none;background:linear-gradient(135deg,#f97316,#c2410c);color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;box-shadow:0 4px 16px #f9731640}
+.bs{padding:10px 20px;border-radius:8px;border:1px solid #2a3550;background:#111827;color:#e8ecf4;font-size:12px;cursor:pointer;font-family:inherit}
+.bp:hover,.bs:hover{filter:brightness(1.1)}
+.cds{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:20px}
+.cd{background:#111827;border:1px solid #2a3550;border-radius:9px;padding:12px;text-align:center}
+.sts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:18px}
+.st{background:#1a2236;border:1px solid #2a3550;border-radius:7px;padding:12px;text-align:center}
+.sn{font-size:26px;font-weight:800;color:#f97316}.sl{font-size:10px;color:#8899b5}
+.sec-t{font-size:18px;font-weight:700;margin-bottom:4px}
+.sec-d{color:#8899b5;font-size:11px;margin-bottom:12px}
+.gb{width:100%;display:flex;align-items:center;gap:8px;padding:9px 12px;background:#111827;border:1px solid #2a3550;border-radius:7px;cursor:pointer;color:#e8ecf4;font-size:12px;font-family:inherit;margin-bottom:5px}
+.gb:hover{background:#1a2236}
+.sb{margin:0 0 6px 12px;background:#111827;border:1px solid #2a3550;border-radius:7px;overflow:hidden}
+.sh{padding:7px 10px;background:#1a2236;display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-size:12px}
+.sh:hover{background:#1f2b42}
+.ur{display:flex;align-items:center;gap:6px;padding:5px 10px;border-bottom:1px solid #1a2236;font-size:11px}
+.ur:hover{background:#1f2b42}
+.tg{padding:1px 5px;border-radius:3px;font-size:8px;font-weight:600;white-space:nowrap}
+.mkb{width:24px;height:24px;border-radius:4px;border:none;background:#f9731620;color:#f97316;cursor:pointer;font-size:11px;font-family:inherit;flex-shrink:0}
+.mkb:hover{background:#f9731640}
+.ctx{display:flex;gap:6px;align-items:center;padding:6px 10px;background:#3b82f610;border:1px solid #3b82f630;border-radius:6px;margin-bottom:12px;font-size:10px;flex-wrap:wrap;color:#93c5fd}
+.cg{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.pn{background:#111827;border:1px solid #2a3550;border-radius:10px;padding:16px}
+.pt{font-size:13px;font-weight:700;margin-bottom:10px}
+.fd{margin-bottom:8px}.fdr{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
+.lb{display:block;font-size:9px;font-weight:600;color:#8899b5;margin-bottom:2px;text-transform:uppercase;letter-spacing:.04em}
+.ip,.sl2,.ta2{width:100%;padding:7px 9px;border-radius:5px;border:1px solid #2a3550;background:#1a2236;color:#e8ecf4;font-size:11px;outline:none;font-family:inherit}
+.ta2{resize:vertical}
+.ctg{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+.ctb{padding:5px 2px;border-radius:5px;border:1px solid #2a3550;background:transparent;color:#8899b5;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:0;font-family:inherit;font-size:8px}
+.ctb.a{border-color:#f97316;background:#f9731615;color:#f97316}
+.og{display:grid;grid-template-columns:1fr 1fr;gap:3px}
+.ob{padding:4px 6px;border-radius:4px;border:1px solid #2a3550;background:transparent;color:#8899b5;cursor:pointer;font-size:9px;font-family:inherit;text-align:left}
+.ob.a{border-color:#14b8a6;background:#14b8a615;color:#14b8a6}
+.mr{display:flex;gap:5px;margin-bottom:10px}
+.mb{flex:1;padding:8px;border-radius:6px;border:2px dashed #2a3550;background:transparent;color:#8899b5;cursor:pointer;font-size:10px;font-weight:600;font-family:inherit}
+.mb.a{border-color:#22c55e;background:#22c55e15;color:#22c55e;border-style:solid}
+.gn{width:100%;padding:11px;border-radius:8px;border:none;background:linear-gradient(135deg,#f97316,#c2410c);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:4px;box-shadow:0 3px 12px #f9731630}
+.gn:disabled{opacity:.7;cursor:wait}
+.pg{height:3px;background:#1a2236;border-radius:3px;overflow:hidden;margin-top:6px}
+.pgf{height:100%;width:60%;background:linear-gradient(90deg,#f97316,#eab308);border-radius:3px;animation:sh 2s infinite;background-size:200%}
+@keyframes sh{0%{background-position:-200%}100%{background-position:200%}}
+
+/* Multi-course tabs */
+.ctabs{display:flex;gap:3px;margin-bottom:10px;flex-wrap:wrap}
+.ctab{padding:5px 12px;border-radius:6px;border:1px solid #2a3550;background:transparent;color:#8899b5;cursor:pointer;font-size:11px;font-family:inherit}
+.ctab.a{background:#f9731620;color:#f97316;border-color:#f97316}
+
+/* Students panel */
+.st-panel{background:#111827;border:1px solid #2a3550;border-radius:10px;padding:14px;margin-top:10px}
+.st-row{display:flex;gap:4px;align-items:center;padding:4px 0;border-bottom:1px solid #1a2236;font-size:10px}
+.st-add{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr auto;gap:4px;margin-top:6px}
+.st-add input,.st-add select{padding:5px;border-radius:4px;border:1px solid #2a3550;background:#1a2236;color:#e8ecf4;font-size:10px;font-family:inherit}
+.st-rm{background:none;border:none;color:#ef4444;cursor:pointer;font-size:12px;font-family:inherit}
+
+/* Export panel */
+.exp-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+.exp-btn{padding:8px;border-radius:6px;border:1px solid #2a3550;background:#111827;color:#e8ecf4;cursor:pointer;font-size:10px;font-family:inherit;text-align:center;transition:all .15s}
+.exp-btn:hover{background:#1a2236;border-color:#374463}
+
+/* Result */
+.rg{display:grid;grid-template-columns:1fr 310px;gap:12px}
+.cbox{background:#111827;border:1px solid #2a3550;border-radius:10px;padding:20px 24px;max-height:80vh;overflow-y:auto;line-height:1.65}
+.ebar{background:#111827;border:1px solid #2a3550;border-radius:10px;padding:12px;max-height:80vh;overflow-y:auto}
+.pb{padding:3px 6px;border-radius:3px;border:1px solid #2a3550;background:transparent;color:#8899b5;cursor:pointer;font-size:9px;text-align:left;font-family:inherit}
+.pb:hover{background:#1a2236;color:#e8ecf4}
+.ego{width:100%;padding:10px;border-radius:7px;border:none;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+.ego:disabled{opacity:.6;cursor:wait}
+.ab{padding:5px 10px;border-radius:5px;border:1px solid #2a3550;background:#111827;color:#e8ecf4;font-size:10px;cursor:pointer;font-family:inherit}
+.hi{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#111827;border:1px solid #2a3550;border-radius:6px;margin-bottom:5px}
+
+/* ═══ HISTORY REDESIGN ═══ */
+.hist-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 14px;background:#111827;border:1px solid #2a3550;border-radius:8px;margin-bottom:12px;flex-wrap:wrap}
+.hist-filters{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.hist-fbtn{padding:4px 10px;border-radius:5px;border:1px solid #2a3550;background:transparent;color:#8899b5;cursor:pointer;font-size:10px;font-family:inherit;transition:all .12s}
+.hist-fbtn.a{background:#3b82f620;color:#93c5fd;border-color:#3b82f650}
+.hist-fbtn:hover{background:#1a2236}
+.hist-sort{display:flex;gap:3px}
+.hist-sbtn{padding:4px 8px;border-radius:5px;border:1px solid #2a3550;background:transparent;color:#8899b5;cursor:pointer;font-size:10px;font-family:inherit}
+.hist-sbtn.a{background:#f9731620;color:#f97316;border-color:#f9731650}
+.hist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}
+.hist-card{background:#111827;border:1px solid #2a3550;border-radius:10px;padding:14px;transition:all .15s;display:flex;flex-direction:column;gap:8px}
+.hist-card:hover{border-color:#374463;background:#131c2e}
+.hist-card-top{display:flex;gap:10px;align-items:flex-start}
+.hist-card-icon{font-size:24px;flex-shrink:0;margin-top:2px}
+.hist-card-info{flex:1;min-width:0}
+.hist-card-theme{font-size:13px;font-weight:700;color:#e8ecf4;line-height:1.3}
+.hist-card-meta{font-size:10px;color:#8899b5;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist-card-tags{display:flex;gap:4px;flex-wrap:wrap}
+.hist-tag{padding:2px 7px;border-radius:4px;font-size:9px;font-weight:600}
+.hist-tag.promo{background:#3b82f620;color:#93c5fd}
+.hist-tag.sport{background:#22c55e20;color:#86efac}
+.hist-tag.dur{background:#a855f720;color:#c4b5fd}
+.hist-tag.multi{background:#f9731620;color:#fdba74}
+.hist-tag.type{background:#14b8a620;color:#5eead4}
+.hist-card-date{font-size:10px;color:#8899b5}
+.hist-card-actions{display:flex;gap:6px;align-items:center}
+.hist-open{flex:1;padding:7px;border-radius:6px;border:none;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s}
+.hist-open:hover{filter:brightness(1.15)}
+.hist-del{padding:7px 10px;border-radius:6px;border:1px solid #2a3550;background:transparent;color:#8899b5;cursor:pointer;font-size:11px;font-family:inherit}
+.hist-del:hover{background:#ef444420;color:#ef4444;border-color:#ef444440}
+
+/* Editable fields in history cards */
+.hist-edit-row{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.hist-edit-field{display:flex;flex-direction:column;gap:2px}
+.hist-edit-label{font-size:8px;font-weight:600;color:#5a6a85;text-transform:uppercase;letter-spacing:.04em}
+.hist-edit-input{padding:5px 8px;border-radius:5px;border:1px solid #2a3550;background:#0d1525;color:#e8ecf4;font-size:11px;font-family:inherit;outline:none;transition:border-color .15s}
+.hist-edit-input:focus{border-color:#3b82f6}
+.hist-edit-input[type="date"]{color-scheme:dark}
+.hist-edit-display{font-size:10px;color:#86efac;font-weight:500}
+.hist-card-dates{display:flex;flex-direction:column;gap:2px}
+.hist-date-main{font-size:11px;color:#fdba74}
+.hist-date-gen{font-size:9px;color:#5a6a85}
+.ft{text-align:center;padding:10px;font-size:9px;color:#5a6a85;border-top:1px solid #2a3550}
+.md-h1{font-size:20px;font-weight:800;color:#f97316;margin:0 0 5px;border-bottom:2px solid #f9731630;padding-bottom:6px}
+.md-h2{font-size:16px;font-weight:700;color:#93c5fd;margin:16px 0 4px}
+.md-h3{font-size:13px;font-weight:600;color:#14b8a6;margin:12px 0 2px}
+.md-h4{font-size:12px;font-weight:600;color:#a855f7;margin:8px 0 2px}
+.md-p{font-size:12px;margin:2px 0;line-height:1.65}
+.md-li{font-size:12px;margin-left:12px;margin-bottom:1px;line-height:1.55}
+.md-bq{border-left:3px solid #f97316;padding-left:10px;color:#8899b5;font-style:italic;margin:6px 0;font-size:11px}
+.md-hr{border:none;border-top:1px solid #2a3550;margin:12px 0}
+.md-tl{font-family:monospace;font-size:10px;color:#8899b5;overflow-x:auto}
+.md-schema{background:#3b82f610;border:1px solid #3b82f630;border-radius:6px;padding:10px;margin:6px 0;font-size:10px;color:#93c5fd;line-height:1.4}
+.md-org{background:#a855f710;border:1px solid #a855f730;border-radius:6px;padding:10px;margin:6px 0;font-size:10px;color:#c4b5fd;line-height:1.4}
+*::-webkit-scrollbar{width:4px}*::-webkit-scrollbar-track{background:#111827}*::-webkit-scrollbar-thumb{background:#374463;border-radius:2px}
+
+/* Réglage clés API */
+.keys-overlay{position:fixed;inset:0;background:#0a0e1ad0;backdrop-filter:blur(4px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px}
+.keys-modal{background:#111827;border:1px solid #2a3550;border-radius:14px;padding:22px;width:100%;max-width:440px;box-shadow:0 20px 60px #000a}
+
+/* File upload */
+
+/* ═══ RICH PRESENTATION RENDERER ═══ */
+.rich-view{display:flex;flex-direction:column;gap:14px}
+.rv-title-card{background:linear-gradient(135deg,#1a1040,#0f1a30);border:1px solid #f9731640;border-radius:16px;padding:32px 28px;text-align:center;position:relative;overflow:hidden}
+.rv-title-card::before{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:radial-gradient(circle at 30% 50%,#f9731610 0%,transparent 50%);pointer-events:none}
+.rv-title-icon{font-size:36px;margin-bottom:8px}
+.rv-title{font-size:24px;font-weight:800;background:linear-gradient(135deg,#f97316,#eab308);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:0;line-height:1.2}
+.rv-title-sub{font-size:11px;color:#8899b5;margin-top:6px}
+.rv-intro-card{background:#111827;border:1px solid #2a3550;border-radius:12px;padding:16px 20px}
+.rv-card{background:#111827;border:1px solid #2a3550;border-radius:14px;overflow:hidden;transition:all .2s}
+.rv-card:hover{border-color:var(--card-color,#3b82f6);box-shadow:0 0 20px rgba(59,130,246,0.15)}
+.rv-card-header{padding:14px 20px 10px;display:flex;align-items:center;gap:10px;position:relative}
+.rv-card-icon{font-size:22px}
+.rv-card-title{font-size:16px;font-weight:700;flex:1;color:#e8ecf4;margin:0}
+.rv-card-accent{position:absolute;bottom:0;left:20px;right:20px;height:2px;border-radius:2px;opacity:.5}
+.rv-card-body{padding:10px 20px 18px}
+.rv-h3{font-size:13px;font-weight:700;color:#e8ecf4;margin:14px 0 6px;display:flex;align-items:center;gap:8px}
+.rv-h3-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.rv-h4{font-size:12px;font-weight:600;color:#a78bfa;margin:10px 0 4px}
+.rv-p{font-size:12px;line-height:1.7;color:#c5cfe0;margin:3px 0}
+.rv-li{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.6;color:#c5cfe0;margin:3px 0}
+.rv-bullet{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:7px}
+.rv-num-item{display:flex;align-items:flex-start;gap:10px;font-size:12px;line-height:1.6;color:#c5cfe0;margin:4px 0}
+.rv-num{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0}
+.rv-callout{background:#1a223680;border-left:3px solid #f97316;border-radius:0 8px 8px 0;padding:10px 14px;margin:8px 0;font-size:11px;color:#e8ecf4;line-height:1.5}
+.rv-svg-box{background:linear-gradient(135deg,#0d1525,#111827);border:1px solid #2a3550;border-radius:10px;padding:16px;margin:10px 0;display:flex;align-items:center;justify-content:center;min-height:80px;overflow-x:auto}
+.rv-schema-label{font-size:9px;color:#8899b5;text-align:center;margin:-6px 0 8px;font-style:italic}
+.rv-org-label{font-size:9px;color:#8899b5;text-align:center;margin:-6px 0 8px;font-style:italic}
+.rv-divider{height:1px;background:linear-gradient(90deg,transparent,#2a3550,transparent);margin:12px 0}
+.rv-table-wrap{overflow-x:auto;margin:10px 0;border-radius:8px;border:1px solid #2a3550}
+.rv-table{width:100%;border-collapse:collapse;font-size:11px}
+.rv-table th{padding:8px 12px;background:#1a2236;color:#e8ecf4;font-weight:600;text-align:left;border-bottom:2px solid}
+.rv-table td{padding:6px 12px;border-bottom:1px solid #1a2236;color:#c5cfe0}
+.rv-table tr:hover td{background:#1a223660}
+
+/* Markdown fallback (text mode) */
+.drop-zone{border:2px dashed #2a3550;border-radius:8px;padding:14px;text-align:center;cursor:pointer;transition:all .2s;font-size:11px;color:#8899b5;background:#0d1525}
+.drop-zone:hover{border-color:#f97316;background:#f9731608}
+.drop-zone-sm{border:1px dashed #2a3550;border-radius:5px;padding:6px;text-align:center;cursor:pointer;font-size:9px;color:#8899b5;margin-bottom:5px;transition:all .15s}
+.drop-zone-sm:hover{border-color:#3b82f6;background:#3b82f608}
+.file-list{margin-top:6px;display:flex;flex-direction:column;gap:3px}
+.file-item{display:flex;align-items:center;gap:5px;padding:4px 8px;background:#1a2236;border-radius:4px;font-size:10px}
+.file-icon{font-size:13px;flex-shrink:0}
+.file-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e8ecf4;font-weight:500}
+.file-size{color:#8899b5;font-size:9px;flex-shrink:0}
+.file-rm{background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px;padding:0 2px;font-family:inherit;flex-shrink:0}
+.file-rm:hover{color:#f87171}
+`}</style>
+
+<header className="hdr">
+<div className="hdr-l"><div className="logo">⚡</div><div><div style={{fontSize:14,fontWeight:700}}>STAPS Course Studio</div><div style={{fontSize:9,color:"#8899b5"}}>UFR STAPS Bourgogne · Ophélie CUYNET</div></div></div>
+<nav className="nav">{[{id:"home",l:"🏠 Accueil"},{id:"formations",l:"📚 Formations"},{id:"create",l:"✨ Créer"},{id:"result",l:"📄 Résultat",off:courses.length===0},{id:"history",l:"🕐 Historique"}].map(n=>
+<button key={n.id} className={`nb ${pg===n.id?"a":""} ${n.off?"off":""}`} onClick={()=>setPg(n.id)}>{n.l}</button>)}
+<button className="nb" style={{color:CK?"#22c55e":"#f97316",fontWeight:600}} onClick={()=>{setCkIn(CK);setPkIn(PK);setShowKeys(true);}} title="Gérer les clés API">⚙️ Clés API {CK?"✓":"⚠️"}</button></nav>
+</header>
+
+{showKeys&&<div className="keys-overlay" onClick={e=>{if(e.target===e.currentTarget&&CK)setShowKeys(false);}}>
+<div className="keys-modal">
+<h2 style={{fontSize:18,fontWeight:800,marginBottom:4}}>⚙️ Clés API</h2>
+<p style={{fontSize:11,color:"#8899b5",marginBottom:14,lineHeight:1.5}}>Tes clés sont enregistrées <strong>uniquement dans ce navigateur</strong> et ne sont jamais publiées dans le code du site. Renseigne-les une fois.</p>
+<div className="fd" style={{marginBottom:12}}>
+<label className="lb">🔑 Clé API Claude (Anthropic) — requise</label>
+<input className="ip" type="password" value={ckIn} onChange={e=>setCkIn(e.target.value)} placeholder="sk-ant-api03-..." autoComplete="off"/>
+<div style={{fontSize:9,color:"#5a6a85",marginTop:3}}>Crée-la sur console.anthropic.com → API Keys</div>
+</div>
+<div className="fd" style={{marginBottom:14}}>
+<label className="lb">🔑 Clé API Perplexity — optionnelle (recherche sourcée)</label>
+<input className="ip" type="password" value={pkIn} onChange={e=>setPkIn(e.target.value)} placeholder="pplx-..." autoComplete="off"/>
+<div style={{fontSize:9,color:"#5a6a85",marginTop:3}}>Sans clé Perplexity, les cours sont générés sans la recherche de sources web.</div>
+</div>
+<div style={{display:"flex",gap:8,alignItems:"center"}}>
+<button className="gn" style={{marginTop:0,flex:1}} onClick={saveKeys} disabled={!ckIn.trim()}>💾 Enregistrer</button>
+{CK&&<button className="bs" onClick={()=>setShowKeys(false)}>Fermer</button>}
+<button className="bs" style={{color:"#ef4444",borderColor:"#ef444440"}} onClick={()=>{if(confirm("Effacer les clés de ce navigateur ?"))clearKeys();}}>🗑️ Effacer</button>
+</div>
+</div>
+</div>}
+
+<main className="mn">
+
+{pg==="home"&&<>
+<div className="hero"><h1 className="hero-t">Studio de Création<br/>de Cours STAPS</h1><p className="hero-d">Multi-cours · Export appli STAPS suite · Évaluations différenciées · Claude + Perplexity · {total} UE</p><div className="br"><button className="bp" onClick={()=>setPg("create")}>✨ Créer</button><button className="bs" onClick={()=>setPg("formations")}>📚 Formations</button></div></div>
+<div className="cds">{[{i:"🔢",t:"Multi-cours",d:"Générer 1 à 10 cours séquencés"},{i:"📤",t:"Export appli STAPS",d:"JSON, postMessage, URL → appli suite"},{i:"👥",t:"Groupes & Stagiaires",d:"Évals différenciées par profil"},{i:"⚽",t:"DEUST Football",d:"BMF, futsal, golf foot"},{i:"🧠",t:"Double IA",d:"Perplexity + Claude"},{i:"📊",t:"Schémas & Visuels",d:"Diagrammes, organigrammes"}].map((f,i)=><div key={i} className="cd"><div style={{fontSize:22,marginBottom:3}}>{f.i}</div><div style={{fontSize:12,fontWeight:700}}>{f.t}</div><div style={{fontSize:10,color:"#8899b5"}}>{f.d}</div></div>)}</div>
+<div className="sts">{[{n:"8",l:"Formations"},{n:String(Object.keys(DB).length),l:"Semestres"},{n:String(total),l:"UE"},{n:"1→10",l:"Cours/séquence"}].map((s,i)=><div key={i} className="st"><div className="sn">{s.n}</div><div className="sl">{s.l}</div></div>)}</div>
+</>}
+
+{pg==="formations"&&<>
+<h2 className="sec-t">📚 Maquette complète</h2><p className="sec-d">Formation → Semestre → UE. Le bouton ✨ pré-remplit le studio.</p>
+{GR.map(g=><div key={g.id}>
+<button className="gb" style={{borderLeft:`4px solid ${g.c}`}} onClick={()=>{
+  if(openG===g.id){setOpenG(null);setOpenS(null);}
+  else{setOpenG(g.id);if(g.k.length===1)setOpenS(g.k[0]);else setOpenS(null);}
+}}>
+<span style={{fontWeight:700,color:g.c,fontSize:12}}>{g.n}</span><span style={{fontSize:10,color:"#8899b5"}}>{g.k.reduce((a,k)=>a+DB[k].u.length,0)} UE</span><span style={{marginLeft:"auto",fontSize:10,color:"#8899b5"}}>{openG===g.id?"▼":"▶"}</span></button>
+{openG===g.id&&g.k.map(k=>{const s=DB[k]; return <div key={k} className="sb">
+<div className="sh" onClick={()=>setOpenS(openS===k?null:k)}><span style={{fontWeight:700,fontSize:12}}>{s.l}</span><span style={{fontSize:10,color:"#8899b5"}}>{s.u.length} UE {openS===k?"▼":"▶"}</span></div>
+{openS===k&&s.u.map((ue,i)=><div key={i} className="ur">
+<div style={{minWidth:100,fontSize:9,color:"#8899b5"}}>{ue.b}</div>
+<div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,fontSize:11}}>{ue.u}</div>{ue.d&&<div style={{fontSize:9,color:"#8899b5"}}>{ue.d}</div>}</div>
+<div style={{display:"flex",gap:3,alignItems:"center",flexShrink:0}}>
+<span className="tg" style={{background:`${g.c}20`,color:g.c}}>{ue.th}</span>
+<span className="tg" style={{background:"#3b82f620",color:"#93c5fd"}}>{ue.e}E</span>
+<button className="mkb" onClick={e=>{e.stopPropagation();pickUE(k,ue);}}>✨</button>
+</div></div>)}
+</div>;})}
+</div>)}
+</>}
+
+{pg==="create"&&<>
+<h2 className="sec-t">✨ Studio de Création</h2>
+{semK&&DB[semK]&&<div className="ctx"><span>📚 {DB[semK].l}</span>{selUE&&<span>📝 {selUE.u}</span>}<button style={{marginLeft:"auto",background:"none",border:"none",color:"#8899b5",cursor:"pointer",fontFamily:"inherit"}} onClick={()=>{setSemK(null);setSelUE(null);}}>✕</button></div>}
+<div className="cg">
+<div className="pn">
+<h3 className="pt">📋 Paramètres</h3>
+<div className="fd"><label className="lb">Thème *</label><input className="ip" value={cp.theme} onChange={e=>setCp(p=>({...p,theme:e.target.value}))} placeholder="Ex: Physiologie de l'effort"/></div>
+
+{/* DATE + PROMO manuels */}
+<div className="fdr">
+<div className="fd"><label className="lb">📅 Date du cours (dispensé le)</label><input className="ip" type="date" value={cp.dateCours} onChange={e=>setCp(p=>({...p,dateCours:e.target.value}))}/></div>
+<div className="fd"><label className="lb">🎓 Promo / Classe</label><input className="ip" value={cp.promoCours} onChange={e=>setCp(p=>({...p,promoCours:e.target.value}))} placeholder="Ex: L2 STAPS Dijon 2025"/></div>
+</div>
+
+{/* MULTI-COURS */}
+<div className="fdr">
+<div className="fd"><label className="lb">Nombre de cours</label>
+<div style={{display:"flex",gap:4,alignItems:"center"}}>
+<input className="ip" type="number" min="1" max="10" value={cp.nbCours} onChange={e=>setCp(p=>({...p,nbCours:parseInt(e.target.value)||1}))} style={{width:60}}/>
+<span style={{fontSize:10,color:"#8899b5"}}>cours de</span>
+<select className="sl2" value={cp.dur} onChange={e=>setCp(p=>({...p,dur:e.target.value}))} style={{width:80}}>
+{["1h","1h30","2h","2h30","3h","4h"].map(d=><option key={d}>{d}</option>)}</select>
+<span style={{fontSize:10,color:"#8899b5"}}>chacun</span>
+</div></div>
+<div className="fd"><label className="lb">Niveau</label><select className="sl2" value={cp.lvl} onChange={e=>setCp(p=>({...p,lvl:e.target.value}))}>{["L1","L2","L3 APAS","L3 EM","L3 ES","L3 MS","M1 EOPS","DEUST 1","DEUST 2","LP","DU"].map(l=><option key={l}>{l}</option>)}</select></div>
+</div>
+
+{cp.nbCours > 1 && <div style={{background:"#f9731610",border:"1px solid #f9731630",borderRadius:6,padding:8,marginBottom:8,fontSize:10,color:"#fdba74"}}>
+📚 <strong>Séquence de {cp.nbCours} cours</strong> : Claude va générer {cp.nbCours} cours progressifs de {cp.dur} avec une progression pédagogique cohérente du début à la fin.
+</div>}
+
+<div className="fd"><label className="lb">Type(s) de cours (multi-sélection)</label><div className="ctg">{CT.map(t=><button key={t.id} className={`ctb ${cp.ct.includes(t.id)?"a":""}`} onClick={()=>setCp(p=>({...p,ct:p.ct.includes(t.id)?p.ct.filter(x=>x!==t.id):[...p.ct,t.id]}))}><span style={{fontSize:14}}>{t.i}</span>{t.n}</button>)}</div></div>
+<div className="fd"><label className="lb">Sport</label><select className="sl2" value={cp.sport} onChange={e=>setCp(p=>({...p,sport:e.target.value}))}><option value="">— Général —</option>{SP.map(s=><option key={s}>{s}</option>)}</select></div>
+<div className="fdr">
+<div className="fd"><label className="lb">Nb étudiants</label><input className="ip" type="number" value={cp.nb} onChange={e=>setCp(p=>({...p,nb:e.target.value}))}/></div>
+<div className="fd"><label className="lb">Âge</label><input className="ip" value={cp.age} onChange={e=>setCp(p=>({...p,age:e.target.value}))} placeholder="18-22"/></div>
+</div>
+<div className="fd"><label className="lb">Objectifs</label><textarea className="ta2" rows={2} value={cp.obj} onChange={e=>setCp(p=>({...p,obj:e.target.value}))} placeholder="Comprendre les mécanismes..."/></div>
+</div>
+
+<div className="pn">
+<h3 className="pt">🎨 Format & Contenu</h3>
+<div className="fd"><label className="lb">Éléments</label><div className="og">{OO.map(o=><button key={o.id} className={`ob ${cp.opts.includes(o.id)?"a":""}`} onClick={()=>setCp(p=>({...p,opts:p.opts.includes(o.id)?p.opts.filter(x=>x!==o.id):[...p.opts,o.id]}))}>{o.n}</button>)}</div></div>
+<div className="mr">
+<button className={`mb ${evalM?"a":""}`} onClick={()=>setEvalM(!evalM)}>✅ Évaluation {evalM?"ON":"OFF"}</button>
+<button className={`mb ${seanceM?"a":""}`} onClick={()=>setSeanceM(!seanceM)}>⚡ Séance Sport {seanceM?"ON":"OFF"}</button>
+</div>
+<div className="fd"><label className="lb">Instructions perso</label><textarea className="ta2" rows={2} value={cp.cust} onChange={e=>setCp(p=>({...p,cust:e.target.value}))} placeholder="Focus rugby, prévention..."/></div>
+
+{/* FILE UPLOAD for creation */}
+<div className="fd">
+<label className="lb">📎 Documents de référence (PDF, cours, publications, images...)</label>
+<div className="drop-zone" onClick={()=>createFileRef.current?.click()}
+  onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor="#f97316";}}
+  onDragLeave={e=>{e.currentTarget.style.borderColor="#2a3550";}}
+  onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="#2a3550";handleFiles(e.dataTransfer.files,setCreateFiles);}}>
+  <input ref={createFileRef} type="file" multiple accept=".pdf,.txt,.md,.csv,.json,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx" style={{display:"none"}} onChange={e=>handleFiles(e.target.files,setCreateFiles)}/>
+  <div style={{fontSize:20}}>📎</div>
+  <div>Glissez vos fichiers ici ou <span style={{color:"#f97316",textDecoration:"underline",cursor:"pointer"}}>parcourir</span></div>
+  <div style={{fontSize:9,color:"#5a6a85"}}>PDF · Images · Texte · Markdown · JSON · CSV (max 20 Mo/fichier)</div>
+</div>
+{createFiles.length>0&&<div className="file-list">
+  {createFiles.map((f,i)=><div key={i} className="file-item">
+    <span className="file-icon">{f.type==="application/pdf"?"📄":f.type?.startsWith("image/")?"🖼️":"📝"}</span>
+    <span className="file-name">{f.name}</span>
+    <span className="file-size">{(f.size/1024).toFixed(0)} Ko</span>
+    <button className="file-rm" onClick={()=>removeFile(i,setCreateFiles)}>×</button>
+  </div>)}
+  <div style={{fontSize:9,color:"#86efac",marginTop:3}}>✅ {createFiles.length} document{createFiles.length>1?"s":""} — Claude les utilisera comme référence pour le cours</div>
+</div>}
+</div>
+
+{/* Stagiaires / Groupes */}
+<button style={{width:"100%",padding:8,borderRadius:6,border:"1px dashed #a855f740",background:showStudents?"#a855f710":"transparent",color:showStudents?"#c4b5fd":"#8899b5",cursor:"pointer",fontSize:10,fontWeight:600,fontFamily:"inherit",marginBottom:8}} onClick={()=>setShowStudents(!showStudents)}>
+👥 Stagiaires & Groupes ({students.length} stagiaires, {groups.length} groupes) {showStudents?"▼":"▶"}
+</button>
+{showStudents&&<div className="st-panel">
+<div style={{fontSize:11,fontWeight:700,marginBottom:4}}>Groupes</div>
+<div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>
+{groups.map((g,i)=><span key={i} style={{padding:"2px 8px",borderRadius:4,background:"#a855f720",color:"#c4b5fd",fontSize:10}}>{g} <button onClick={()=>setGroups(gs=>gs.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:10}}>×</button></span>)}
+<div style={{display:"flex",gap:3}}><input className="ip" value={newGrp} onChange={e=>setNewGrp(e.target.value)} placeholder="Nom du groupe" style={{width:120,fontSize:10,padding:4}}/><button className="mkb" onClick={addGroup} style={{width:24,height:24,fontSize:10}}>+</button></div>
+</div>
+<div style={{fontSize:11,fontWeight:700,marginBottom:4}}>Stagiaires</div>
+{students.map(s=><div key={s.id} className="st-row">
+<span style={{flex:1,fontWeight:600}}>{s.nom}</span><span>{s.sport}</span><span>{s.age}ans</span><span>{s.niveau}</span><span style={{color:"#c4b5fd"}}>{s.groupe}</span>
+<button className="st-rm" onClick={()=>removeStudent(s.id)}>×</button>
+</div>)}
+<div className="st-add">
+<input value={newSt.nom} onChange={e=>setNewSt(s=>({...s,nom:e.target.value}))} placeholder="Nom"/>
+<input value={newSt.sport} onChange={e=>setNewSt(s=>({...s,sport:e.target.value}))} placeholder="Sport"/>
+<input value={newSt.age} onChange={e=>setNewSt(s=>({...s,age:e.target.value}))} placeholder="Âge"/>
+<select value={newSt.niveau} onChange={e=>setNewSt(s=>({...s,niveau:e.target.value}))}>
+<option value="">Niveau</option><option>Débutant</option><option>Intermédiaire</option><option>Avancé</option><option>Expert</option></select>
+<select value={newSt.groupe} onChange={e=>setNewSt(s=>({...s,groupe:e.target.value}))}>
+<option value="">Groupe</option>{groups.map(g=><option key={g}>{g}</option>)}</select>
+<button className="mkb" onClick={addStudent} style={{fontSize:10}}>+</button>
+</div>
+{students.length>0&&evalM&&<div style={{marginTop:8,fontSize:10,color:"#86efac",background:"#22c55e10",padding:6,borderRadius:4}}>✅ Les évaluations seront adaptées aux profils et groupes de vos {students.length} stagiaires.</div>}
+</div>}
+
+<button className="gn" onClick={generate} disabled={busy||!cp.theme}>{busy?step:`🚀 Générer ${cp.nbCours>1?`${cp.nbCours} cours séquencés`:"le cours"}`}</button>
+{busy&&<div className="pg"><div className="pgf"/></div>}
+</div>
+</div>
+</>}
+
+{pg==="result"&&courses.length>0&&<>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,flexWrap:"wrap",gap:6}}>
+<div><h2 className="sec-t">📄 {courses.length>1?`Séquence de ${courses.length} cours`:"Cours Généré"}</h2>
+<div style={{display:"flex",gap:6,fontSize:10,color:"#8899b5",marginTop:2,flexWrap:"wrap"}}>{cur?.semL&&<span>📚 {cur.semL}</span>}{cur?.ue&&<span>📝 {cur.ue}</span>}</div></div>
+<div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+<button className="ab" onClick={exportMD}>💾 .md</button>
+<button className="ab" onClick={exportJSON}>📤 JSON</button>
+<button className="ab" onClick={exportPostMessage}>📡 postMessage</button>
+<button className="ab" onClick={exportURL}>🔗 URL</button>
+<button className="ab" onClick={()=>navigator.clipboard.writeText(cur?.content||"")}>📋</button>
+<button className="ab" onClick={()=>setPg("create")}>✨ Nouveau</button>
+</div>
+</div>
+
+{/* Export info */}
+<div style={{background:"#14b8a610",border:"1px solid #14b8a630",borderRadius:6,padding:8,marginBottom:10,fontSize:10,color:"#5eead4"}}>
+📤 <strong>Export → Ophélie CUYNET Staps (appli suite) :</strong> JSON ({courses.length} cours{students.length>0?` + ${students.length} stagiaires`:""}) · postMessage <code style={{background:"#1a2236",padding:"1px 4px",borderRadius:3}}>{"{"}"type":"STAPS_IMPORT"{"}"}</code> · URL params <code style={{background:"#1a2236",padding:"1px 4px",borderRadius:3}}>?cours=...</code>
+</div>
+
+{/* Multi-course tabs + view mode */}
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:6}}>
+{courses.length>1&&<div className="ctabs">{courses.map((c,i)=><button key={i} className={`ctab ${activeC===i?"a":""}`} onClick={()=>setActiveC(i)}>Cours {i+1}/{courses.length}</button>)}</div>}
+<div className="ctabs" style={{marginLeft:"auto"}}>
+<button className={`ctab ${viewMode==="slides"?"a":""}`} onClick={()=>setViewMode("slides")}>🎨 Présentation</button>
+<button className={`ctab ${viewMode==="text"?"a":""}`} onClick={()=>setViewMode("text")}>📝 Texte brut</button>
+</div>
+</div>
+
+<div className="rg">
+<div className="cbox"><RichRenderer text={cur?.content} mode={viewMode}/></div>
+<div className="ebar">
+<h3 style={{fontSize:13,fontWeight:700,marginBottom:4}}>🖊️ Modifier{courses.length>1?` (Cours ${activeC+1})`:""}</h3>
+<div style={{display:"flex",flexDirection:"column",gap:2,marginBottom:6}}>
+{["Plus de schémas","Cas pratique détaillé","Plus accessible","Évaluation formative","Exercices groupe","Bibliographie","Fiche séance","Exemples haut niveau","QCM 10 questions","Organigramme","Différencier par groupe/niveau"].map((p,i)=>
+<button key={i} className="pb" onClick={()=>setEdit(p)}>{p}</button>)}
+</div>
+<textarea className="ta2" rows={3} value={edit} onChange={e=>setEdit(e.target.value)} placeholder="Modifications..." style={{marginBottom:5,fontSize:11}}/>
+
+{/* FILE UPLOAD for editing */}
+<div className="drop-zone-sm" onClick={()=>editFileRef.current?.click()}
+  onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor="#3b82f6";}}
+  onDragLeave={e=>{e.currentTarget.style.borderColor="#2a3550";}}
+  onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="#2a3550";handleFiles(e.dataTransfer.files,setEditFiles);}}>
+  <input ref={editFileRef} type="file" multiple accept=".pdf,.txt,.md,.csv,.json,.jpg,.jpeg,.png,.gif,.webp" style={{display:"none"}} onChange={e=>handleFiles(e.target.files,setEditFiles)}/>
+  📎 Joindre des docs pour la modification
+</div>
+{editFiles.length>0&&<div className="file-list" style={{marginBottom:5}}>
+  {editFiles.map((f,i)=><div key={i} className="file-item"><span className="file-icon">{f.type==="application/pdf"?"📄":"📝"}</span><span className="file-name">{f.name}</span><button className="file-rm" onClick={()=>removeFile(i,setEditFiles)}>×</button></div>)}
+</div>}
+<button className="ego" onClick={doEdit} disabled={editing||!edit}>{editing?"⏳":"🔄 Appliquer"}</button>
+{cur?.sources?.length>0&&<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #2a3550"}}><div style={{fontSize:11,fontWeight:600,color:"#8899b5",marginBottom:3}}>🔗 Sources</div>{cur.sources.map((s,i)=><a key={i} href={s} target="_blank" rel="noopener noreferrer" style={{display:"block",fontSize:8,color:"#93c5fd",marginBottom:1,wordBreak:"break-all",textDecoration:"none"}}>[{i+1}] {s.length>45?s.substring(0,45)+"...":s}</a>)}</div>}
+</div>
+</div>
+</>}
+
+{pg==="history"&&(()=>{
+  // Use promoCours (manual) as priority, fallback to promo (auto)
+  const getPromo = h => h.promoCours || h.promo || h.f || "";
+  const promos=[...new Set(hist.map(h=>getPromo(h)))].filter(Boolean).sort();
+  // Filter
+  const filtered=histFilter==="all"?hist:hist.filter(h=>getPromo(h)===histFilter);
+  // Sort: by dateCours (manual) if set, otherwise by creation date
+  const sorted=[...filtered].sort((a,b)=>{
+    if(histSort==="cours"){
+      const da=a.dateCours?new Date(a.dateCours).getTime():0;
+      const db=b.dateCours?new Date(b.dateCours).getTime():0;
+      if(da&&db) return da-db;
+      if(da) return -1; if(db) return 1;
+    }
+    const da=new Date(a.date||0).getTime(), db=new Date(b.date||0).getTime();
+    return histSort==="oldest"?da-db:db-da;
+  });
+
+  const fmtDate = d => { if(!d) return ""; try{return new Date(d+"T00:00:00").toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"long",year:"numeric"});}catch{return d;} };
+
+  return <>
+  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,flexWrap:"wrap",gap:8}}>
+    <div>
+      <h2 className="sec-t">🕐 Historique des cours</h2>
+      <div style={{fontSize:11,color:"#8899b5"}}>{hist.length} cours · Consultables et modifiables · Persistant entre sessions</div>
+    </div>
+    {hist.length>0&&<div style={{display:"flex",gap:4}}>
+      <button className="ab" onClick={()=>{if(confirm("Supprimer tout l'historique ?"))setHist([]);}}>🗑️ Vider</button>
+      <button className="ab" style={{color:"#ef4444",borderColor:"#ef444440"}} onClick={()=>{if(confirm("Reset TOTAL ?")){setHist([]);setCourses([]);setStudents([]);setGroups([]);localStorage.removeItem("staps_hist");localStorage.removeItem("staps_courses");localStorage.removeItem("staps_students");localStorage.removeItem("staps_groups");}}}>🔄 Reset</button>
+    </div>}
+  </div>
+
+  {hist.length>0&&<div className="hist-bar">
+    <div className="hist-filters">
+      <span style={{fontSize:10,color:"#8899b5",fontWeight:600}}>PROMO :</span>
+      <button className={`hist-fbtn ${histFilter==="all"?"a":""}`} onClick={()=>setHistFilter("all")}>Toutes ({hist.length})</button>
+      {promos.map(p=><button key={p} className={`hist-fbtn ${histFilter===p?"a":""}`} onClick={()=>setHistFilter(p)}>{p} ({hist.filter(h=>getPromo(h)===p).length})</button>)}
+    </div>
+    <div className="hist-sort">
+      <button className={`hist-sbtn ${histSort==="newest"?"a":""}`} onClick={()=>setHistSort("newest")}>⬇️ Récent</button>
+      <button className={`hist-sbtn ${histSort==="oldest"?"a":""}`} onClick={()=>setHistSort("oldest")}>⬆️ Ancien</button>
+      <button className={`hist-sbtn ${histSort==="cours"?"a":""}`} onClick={()=>setHistSort("cours")}>📅 Date cours</button>
+    </div>
+  </div>}
+
+  {sorted.length===0?<div style={{textAlign:"center",padding:40,color:"#8899b5"}}>
+    {hist.length===0?<>📭 Aucun cours généré<br/><br/><button className="bp" onClick={()=>setPg("create")}>✨ Créer</button></>
+    :<>Aucun cours pour "{histFilter}"</>}
+  </div>:
+  <div className="hist-grid">
+    {sorted.map(h => <div key={h.id} className="hist-card">
+      {/* Header: icon + theme */}
+      <div className="hist-card-top">
+        <span className="hist-card-icon">{CT.find(t=>t.id===(Array.isArray(h.ct)?h.ct[0]:h.ct))?.i||"📄"}</span>
+        <div className="hist-card-info">
+          <div className="hist-card-theme">{h.theme}</div>
+          <div className="hist-card-meta">
+            {h.semester&&<span>{h.semester}</span>}
+            {h.ue&&<span> · {h.ue}</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* Editable: date cours + promo */}
+      <div className="hist-edit-row">
+        <div className="hist-edit-field">
+          <label className="hist-edit-label">📅 Date du cours</label>
+          <input type="date" className="hist-edit-input" value={h.dateCours||""} onChange={e=>updateHistEntry(h.id,"dateCours",e.target.value)}/>
+          {h.dateCours&&<div className="hist-edit-display">{fmtDate(h.dateCours)}</div>}
+        </div>
+        <div className="hist-edit-field">
+          <label className="hist-edit-label">🎓 Promo / Classe</label>
+          <input className="hist-edit-input" value={h.promoCours||""} onChange={e=>updateHistEntry(h.id,"promoCours",e.target.value)} placeholder="Ex: L2 STAPS Dijon"/>
+        </div>
+      </div>
+
+      {/* Tags */}
+      <div className="hist-card-tags">
+        {h.promoCours&&<span className="hist-tag promo">{h.promoCours}</span>}
+        {!h.promoCours&&<span className="hist-tag promo">{h.promo||"—"}</span>}
+        {h.sport&&<span className="hist-tag sport">{h.sport}</span>}
+        <span className="hist-tag dur">{h.duration||"2h"}</span>
+        {(h.nbCours||h.n||1)>1&&<span className="hist-tag multi">×{h.nbCours||h.n} cours</span>}
+        {(Array.isArray(h.ct)?h.ct:[h.ct]).filter(Boolean).map(c=><span key={c} className="hist-tag type">{CT.find(t=>t.id===c)?.n||c}</span>)}
+      </div>
+
+      {/* Dates */}
+      <div className="hist-card-dates">
+        {h.dateCours&&<div className="hist-date-main">📅 Cours prévu : <strong>{fmtDate(h.dateCours)}</strong></div>}
+        <div className="hist-date-gen">Généré le {h.dateLabel||new Date(h.date).toLocaleString("fr-FR")}</div>
+      </div>
+
+      {/* Actions */}
+      <div className="hist-card-actions">
+        {h.courses&&h.courses.length>0?
+          <button className="hist-open" onClick={()=>openFromHistory(h)}>📖 Ouvrir le cours</button>
+          :<span style={{fontSize:9,color:"#5a6a85"}}>Ancien format</span>
+        }
+        <button className="hist-del" onClick={()=>{if(confirm("Supprimer ?"))deleteFromHistory(h.id);}}>🗑️</button>
+      </div>
+    </div>)}
+  </div>}
+  </>;
+})()}
+
+
+</main>
+<footer className="ft">STAPS Course Studio v4 · Multi-cours · Export appli STAPS suite · Claude + Perplexity · Ophélie CUYNET · UFR STAPS Bourgogne 2025-2026</footer>
+</div>);
+}
+
+ReactDOM.render(React.createElement(App), document.getElementById('root'));
+</script>
+</body>
+</html>
