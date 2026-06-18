@@ -369,17 +369,75 @@ const[hovSrc,setHovSrc]=useState(null);
 const[undoStk,setUndoStk]=useState([]);
 useEffect(()=>{
   const box=document.querySelector(".cbox"); if(!box)return;
-  box.querySelectorAll(".src-hl").forEach(el=>el.classList.remove("src-hl"));
+  box.querySelectorAll(".src-hl,.src-hl-sec").forEach(el=>el.classList.remove("src-hl","src-hl-sec"));
   box.querySelectorAll(".cite.on").forEach(el=>el.classList.remove("on"));
   if(hovSrc==null)return;
   box.querySelectorAll('.cite[data-src="'+hovSrc+'"]').forEach(c=>{
     c.classList.add("on");
-    const blk=c.closest(".rv-p,.rv-li,.rv-num-item,.rv-callout,.rv-h3,.rv-intro-card,.md-p,.md-li,td,th");
+    // passage exact (marqué fort)
+    const blk=c.closest(".rv-p,.rv-li,.rv-num-item,.rv-callout,.rv-h3,.md-p,.md-li,td,th");
     if(blk)blk.classList.add("src-hl");
+    // toute la section/le bloc du cours qui fait référence (tinté)
+    const sec=c.closest(".rv-card,.rv-intro-card,.rv-table-wrap");
+    if(sec)sec.classList.add("src-hl-sec");
   });
 },[hovSrc,activeC,viewMode,courses]);
 function pushUndo(prev){if(prev)setUndoStk(u=>[...u,prev].slice(-20));}
 function doUndo(){setUndoStk(u=>{if(!u.length)return u;const last=u[u.length-1];setCourses(c=>{const nc=[...c];if(nc[activeC])nc[activeC]={...nc[activeC],content:last};return nc;});return u.slice(0,-1);});}
+// ── Vidéo de révision (résumé animé + narration vocale) ──
+const[vidOpen,setVidOpen]=useState(false);
+const[vidBusy,setVidBusy]=useState(false);
+const[vidScenes,setVidScenes]=useState([]);
+const[vidTitle,setVidTitle]=useState("");
+const[vidIdx,setVidIdx]=useState(0);
+const[vidPlaying,setVidPlaying]=useState(true);
+const[vidVoice,setVidVoice]=useState(true);
+function closeVid(){setVidOpen(false);setVidPlaying(false);try{window.speechSynthesis&&window.speechSynthesis.cancel();}catch(e){}}
+async function genRecap(){
+  if(!CK){alert("⚙️ Configure d'abord ta clé API Claude (bouton ⚙️ Clés API).");setShowKeys(true);return;}
+  const c=courses[activeC]; if(!c)return;
+  setVidBusy(true);
+  try{
+    const r=await cl(
+      `Tu conçois une CAPSULE VIDÉO de révision pour des étudiants STAPS, à partir d'un cours. Objectif : un résumé hyper clair, dynamique et riche en infos pour réviser. Sélectionne les notions VRAIMENT importantes et explique-les simplement mais avec du concret (définitions, mécanismes, chiffres clés, exemples). Réponds STRICTEMENT par un JSON valide, sans aucun texte autour ni markdown, au format exact :
+{"titre":"Titre court de la vidéo","scenes":[
+ {"type":"intro","emoji":"🎬","titre":"Accroche","narration":"phrase d'introduction motivante"},
+ {"type":"notion","emoji":"💡","titre":"Nom de la notion","points":["idée clé courte","autre idée concrète"],"motcle":"LE mot à retenir","narration":"explication orale claire en 1-2 phrases"},
+ {"type":"schema","emoji":"📊","titre":"Titre","schema":"Étape1 → Étape2 → Étape3","narration":"explication du schéma"},
+ {"type":"outro","emoji":"✅","titre":"À retenir","points":["message clé 1","message clé 2","message clé 3"],"narration":"conclusion de révision"}
+]}
+Règles : 7 à 11 scènes, points TRÈS courts (max ~9 mots), 'motcle' optionnel, 'schema' avec des → uniquement quand pertinent, narration naturelle en français. JSON pur uniquement.`,
+      `COURS :\n${c.content}`,
+      []
+    );
+    let t=(r||"").trim(); const a=t.indexOf("{"),b=t.lastIndexOf("}");
+    if(a>-1&&b>a)t=t.slice(a,b+1);
+    const data=JSON.parse(t);
+    if(!data.scenes||!data.scenes.length)throw new Error("script vide");
+    setVidScenes(data.scenes); setVidTitle(data.titre||cp.theme||"Révision");
+    setVidIdx(0); setVidVoice(true); setVidPlaying(true); setVidOpen(true);
+  }catch(e){ alert("Impossible de générer la vidéo de révision : "+e.message+". Réessaie."); }
+  setVidBusy(false);
+}
+useEffect(()=>{
+  if(!vidOpen||!vidPlaying)return;
+  const sc=vidScenes[vidIdx]; if(!sc)return;
+  let cancelled=false,timer=null;
+  const isLast=vidIdx>=vidScenes.length-1;
+  const advance=()=>{ if(cancelled)return; if(isLast)setVidPlaying(false); else setVidIdx(i=>i+1); };
+  const spoken=[sc.titre,(sc.points||[]).join(". "),sc.narration].filter(Boolean).join(". ");
+  const dur=Math.max(3800,Math.min(12000,2600+spoken.length*42));
+  if(vidVoice && window.speechSynthesis){
+    try{
+      window.speechSynthesis.cancel();
+      const u=new SpeechSynthesisUtterance(spoken); u.lang="fr-FR"; u.rate=1.05;
+      u.onend=()=>{ if(!cancelled)advance(); };
+      window.speechSynthesis.speak(u);
+      timer=setTimeout(advance,dur+7000);
+    }catch(e){ timer=setTimeout(advance,dur); }
+  } else { timer=setTimeout(advance,dur); }
+  return ()=>{ cancelled=true; if(timer)clearTimeout(timer); try{window.speechSynthesis&&window.speechSynthesis.cancel();}catch(e){} };
+},[vidOpen,vidPlaying,vidIdx,vidScenes,vidVoice]);
 function onCourseSelect(e){
   const s=window.getSelection&&window.getSelection();
   const t=s?s.toString().trim():"";
@@ -1090,8 +1148,41 @@ return(<div className="app"><style>{`
 /* Citations [N] + surlignage par source */
 .cite{color:#93c5fd;font-weight:600;font-size:.88em;padding:0 1px;border-radius:3px;transition:all .12s}
 .cite.on{background:#f97316;color:#fff;padding:0 4px;box-shadow:0 0 8px #f9731680}
-.src-hl{background:#f9731618;border-radius:6px;box-shadow:0 0 0 2px #f9731566;transition:background .12s}
-td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f9731580}
+.src-hl{background:#f9731626;border-radius:6px;box-shadow:0 0 0 2px #f97316aa;transition:background .12s}
+td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f97316aa}
+.src-hl-sec{background:#f9731610;box-shadow:0 0 0 2px #f9731540;border-radius:12px;transition:background .12s}
+
+/* 🎬 Lecteur vidéo de révision */
+.vid-overlay{position:fixed;inset:0;z-index:2000;background:linear-gradient(135deg,#0a0e1a,#1a1040,#0d1525,#101a35);background-size:300% 300%;animation:vbg 14s ease infinite;display:flex;flex-direction:column;font-family:'Outfit',sans-serif}
+@keyframes vbg{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+.vid-top{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;flex-shrink:0}
+.vid-ttl{font-size:15px;font-weight:700;color:#fdba74}
+.vid-x{background:#ffffff16;border:none;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:15px;font-family:inherit}
+.vid-x:hover{background:#ffffff2e}
+.vid-stage{flex:1;display:flex;align-items:center;justify-content:center;padding:8px 24px;overflow:hidden}
+.vid-scene{max-width:880px;width:100%;text-align:center;display:flex;flex-direction:column;align-items:center;gap:16px}
+.vid-emoji{font-size:66px;line-height:1;animation:vpop .6s cubic-bezier(.2,1.4,.4,1)}
+.vid-stitle{font-size:40px;font-weight:800;line-height:1.08;background:linear-gradient(135deg,#ffffff,#f97316,#eab308);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:vup .6s .08s both}
+.vid-key{font-size:21px;font-weight:800;color:#fff;background:linear-gradient(135deg,#f97316,#c2410c);padding:9px 24px;border-radius:30px;box-shadow:0 10px 34px #f9731677;animation:vpop .7s .18s both;letter-spacing:.5px}
+.vid-points{list-style:none;padding:0;margin:2px 0;display:flex;flex-direction:column;gap:11px;max-width:680px;width:100%}
+.vid-points li{font-size:22px;color:#eef2fb;background:#ffffff0e;border:1px solid #ffffff16;border-left:4px solid #f97316;border-radius:11px;padding:13px 20px;text-align:left;animation:vslide .5s both;line-height:1.35}
+.vid-narr{font-size:15px;color:#aab4cc;font-style:italic;max-width:660px;animation:vfade 1s .3s both}
+.vid-svg{width:100%;max-width:760px;background:#ffffff0a;border:1px solid #ffffff14;border-radius:16px;padding:20px;animation:vfade .8s both}
+@keyframes vpop{from{opacity:0;transform:scale(.5)}to{opacity:1;transform:scale(1)}}
+@keyframes vup{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:translateY(0)}}
+@keyframes vslide{from{opacity:0;transform:translateX(-26px)}to{opacity:1;transform:translateX(0)}}
+@keyframes vfade{from{opacity:0}to{opacity:1}}
+.vid-bar{padding:12px 24px 22px;display:flex;flex-direction:column;gap:12px;align-items:center;flex-shrink:0}
+.vid-prog{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+.vid-dot{width:26px;height:5px;border-radius:3px;background:#ffffff24;cursor:pointer;transition:all .2s}
+.vid-dot.on{background:#f97316;width:42px}
+.vid-dot.done{background:#f9731685}
+.vid-ctrls{display:flex;gap:9px;align-items:center}
+.vid-ctrls button{background:#ffffff16;border:none;color:#fff;width:48px;height:48px;border-radius:50%;cursor:pointer;font-size:18px;font-family:inherit;transition:all .15s}
+.vid-ctrls button:hover{background:#ffffff2e;transform:scale(1.08)}
+.vid-ctrls button.on{background:#f9731648}
+.vid-count{font-size:12px;color:#8899b5}
+@media(max-width:640px){.vid-stitle{font-size:30px}.vid-points li{font-size:18px}.vid-emoji{font-size:52px}}
 
 /* File upload */
 
@@ -1194,6 +1285,30 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f9731580}
 <RichRenderer text={selAns.text} mode="text"/>
 {selAns.sources&&selAns.sources.length>0&&<div className="selpop-src">{selAns.sources.map((s,i)=><a key={i} href={s} target="_blank" rel="noopener noreferrer">[{i+1}] {s.length>50?s.slice(0,50)+"…":s}</a>)}</div>}
 </div>}
+</div>}
+
+{vidOpen&&<div className="vid-overlay">
+<div className="vid-top"><div className="vid-ttl">🎬 {vidTitle}</div><button className="vid-x" onClick={closeVid}>✕</button></div>
+<div className="vid-stage">{(()=>{const sc=vidScenes[vidIdx]||{};return(
+<div key={vidIdx} className={"vid-scene vt-"+(sc.type||"notion")}>
+<div className="vid-emoji">{sc.emoji||"💡"}</div>
+<div className="vid-stitle">{sc.titre}</div>
+{sc.motcle&&<div className="vid-key">{sc.motcle}</div>}
+{sc.schema&&<div className="vid-svg" dangerouslySetInnerHTML={{__html:genFlowSVG(parseSchemaItems(sc.schema))}}/>}
+{sc.points&&sc.points.length>0&&<ul className="vid-points">{sc.points.map((p,i)=><li key={i} style={{animationDelay:(0.25+i*0.45)+"s"}}>{p}</li>)}</ul>}
+{sc.narration&&<div className="vid-narr">“{sc.narration}”</div>}
+</div>);})()}</div>
+<div className="vid-bar">
+<div className="vid-prog">{vidScenes.map((_,i)=><span key={i} className={"vid-dot"+(i===vidIdx?" on":i<vidIdx?" done":"")} onClick={()=>setVidIdx(i)}/>)}</div>
+<div className="vid-ctrls">
+<button onClick={()=>setVidIdx(i=>Math.max(0,i-1))} title="Précédent">⏮</button>
+<button onClick={()=>setVidPlaying(p=>!p)} title="Lecture / Pause">{vidPlaying?"⏸":"▶️"}</button>
+<button onClick={()=>setVidIdx(i=>Math.min(vidScenes.length-1,i+1))} title="Suivant">⏭</button>
+<button onClick={()=>{setVidIdx(0);setVidPlaying(true);}} title="Recommencer">↻</button>
+<button className={vidVoice?"on":""} onClick={()=>{setVidVoice(v=>!v);try{window.speechSynthesis&&window.speechSynthesis.cancel();}catch(e){}}} title="Voix off">{vidVoice?"🔊":"🔇"}</button>
+</div>
+<div className="vid-count">{vidIdx+1} / {vidScenes.length}</div>
+</div>
 </div>}
 
 <main className="mn">
@@ -1337,6 +1452,7 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f9731580}
 <div><h2 className="sec-t">📄 {courses.length>1?`Séquence de ${courses.length} cours`:"Cours Généré"}</h2>
 <div style={{display:"flex",gap:6,fontSize:10,color:"#8899b5",marginTop:2,flexWrap:"wrap"}}>{cur?.semL&&<span>📚 {cur.semL}</span>}{cur?.ue&&<span>📝 {cur.ue}</span>}</div></div>
 <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+<button className="ab" style={{color:"#fff",background:"linear-gradient(135deg,#a855f7,#ec4899)",border:"none",fontWeight:700}} onClick={genRecap} disabled={vidBusy||!cur}>{vidBusy?"⏳ Création de la vidéo…":"🎬 Vidéo résumé"}</button>
 {undoStk.length>0&&<button className="ab" style={{color:"#fdba74",borderColor:"#f9731640"}} onClick={doUndo}>↩️ Annuler</button>}
 <button className="ab" style={{color:"#fdba74",borderColor:"#f9731640",fontWeight:600}} onClick={exportHTML}>🌐 HTML</button>
 <button className="ab" style={{color:"#fca5a5",borderColor:"#ef444440",fontWeight:600}} onClick={exportPDF}>📄 PDF</button>
