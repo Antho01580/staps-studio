@@ -265,12 +265,38 @@ async function processFile(file) {
 }
 
 // ── Export : analyse du cours en blocs + générateurs HTML / PPTX / PDF ──
-function stripMd(s){return (s||"").replace(/\*\*(.*?)\*\*/g,"$1").replace(/\*(.*?)\*/g,"$1").replace(/`/g,"").replace(/\s*\[(\d+)\]/g,"").replace(/\s{2,}/g," ").trim();}
+function stripMd(s){return (s||"").replace(/\[([^\]]+)\]\([^)]*\)/g,"$1").replace(/\*\*(.*?)\*\*/g,"$1").replace(/\*(.*?)\*/g,"$1").replace(/`/g,"").replace(/\s*\[(\d+)\]/g,"").replace(/\s{2,}/g," ").trim();}
 function inlineHTML(s){
   let h=(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  h=h.replace(/\[([^\]]+)\]\(([^)]+)\)/g,"$1");
   h=h.replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>");
+  h=h.replace(/\*([^*\n]+)\*/g,"<em>$1</em>");
   h=h.replace(/\[(\d+)\]/g,'<sup class="cit">[$1]</sup>');
   return h;
+}
+function schemaSteps(text){
+  const clean=(text||"").replace(/^\[?(SCH[ÉE]MA|ORGANIGRAMME)[:\s]*/i,"").replace(/\]$/,"").trim();
+  if(/→|->/.test(clean))return clean.split(/→|->/).map(x=>x.trim()).filter(Boolean);
+  if(clean.indexOf("—")>-1)return clean.split("—").map(x=>x.trim()).filter(x=>x.length>1);
+  if(clean.indexOf(",")>-1)return clean.split(",").map(x=>x.trim()).filter(Boolean);
+  if(clean.indexOf("/")>-1)return clean.split("/").map(x=>x.trim()).filter(Boolean);
+  return clean?[clean]:[];
+}
+function flowSVG(items){
+  const cols=["#f97316","#3b82f6","#22c55e","#a855f7","#ec4899","#eab308","#14b8a6"];
+  const n=Math.min(items.length,7); if(!n)return "";
+  const bw=130,bh=46,gap=26,pad=12;
+  const w=n*bw+(n-1)*gap+pad*2, h=bh+24;
+  let s='<svg viewBox="0 0 '+w+' '+h+'" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:'+w+'px;height:auto;display:block;margin:0 auto">';
+  for(let i=0;i<n;i++){
+    const x=pad+i*(bw+gap),y=12,c=cols[i%cols.length];
+    s+='<rect x="'+x+'" y="'+y+'" width="'+bw+'" height="'+bh+'" rx="10" fill="'+c+'"/>';
+    const raw=(items[i]||"").length>20?(items[i].slice(0,19)+"…"):items[i];
+    const t=raw.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    s+='<text x="'+(x+bw/2)+'" y="'+(y+bh/2+4)+'" text-anchor="middle" fill="#fff" font-size="12" font-weight="700" font-family="Inter,Arial,sans-serif">'+t+'</text>';
+    if(i<n-1){const ax=x+bw,ay=y+bh/2;s+='<line x1="'+(ax+3)+'" y1="'+ay+'" x2="'+(ax+gap-7)+'" y2="'+ay+'" stroke="#94a3b8" stroke-width="2.5"/><polygon points="'+(ax+gap-9)+','+(ay-4)+' '+(ax+gap-2)+','+ay+' '+(ax+gap-9)+','+(ay+4)+'" fill="#94a3b8"/>';}
+  }
+  return s+'</svg>';
 }
 function parseBlocks(md){
   const lines=(md||"").split("\n"); const out=[]; let tb=[];
@@ -306,7 +332,7 @@ function buildDocHTML(course,meta){
     else if(b.t==="h4")body+='<h4 class="d-h4">'+inlineHTML(stripMd(b.x))+"</h4>";
     else if(b.t==="li"){if(!inList){body+='<ul class="d-ul">';inList=true;}body+="<li>"+inlineHTML(b.x)+"</li>";}
     else if(b.t==="quote")body+='<div class="d-quote">'+inlineHTML(b.x)+"</div>";
-    else if(b.t==="schema")body+='<div class="d-schema">📊 '+inlineHTML(stripMd(b.x))+"</div>";
+    else if(b.t==="schema"){const st=schemaSteps(b.x);body+='<div class="d-schema">'+(st.length>=2?flowSVG(st):("📊 "+inlineHTML(stripMd(b.x))))+"</div>";}
     else if(b.t==="hr")body+='<hr class="d-hr"/>';
     else if(b.t==="table"){let t='<table class="d-table"><thead><tr>'+b.head.map(h=>"<th>"+inlineHTML(stripMd(h))+"</th>").join("")+"</tr></thead><tbody>";b.rows.forEach(r=>{t+="<tr>"+r.map(c=>"<td>"+inlineHTML(c)+"</td>").join("")+"</tr>";});t+="</tbody></table>";body+=t;}
     else body+='<p class="d-p">'+inlineHTML(b.x)+"</p>";
@@ -759,74 +785,57 @@ function exportPDF(){
 }
 async function exportPPTX(){
   const c=courses[activeC]; if(!c)return;
-  if(!CK){alert("⚙️ Configure ta clé API Claude (bouton ⚙️ Clés API) pour générer le PowerPoint mis en page par l'IA.");setShowKeys(true);return;}
-  setBusy(true);setStep("📊 Mise en page du PowerPoint…");
+  setBusy(true);setStep("📊 Rendu du cours…");
+  let ifr=null;
   try{
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+    if(!window.html2canvas)throw new Error("module de capture indisponible");
+    const W=1000;
+    ifr=document.createElement("iframe");
+    ifr.style.cssText="position:fixed;left:-12000px;top:0;width:"+W+"px;height:10px;border:0;background:#fff";
+    document.body.appendChild(ifr);
+    const doc=ifr.contentDocument;
+    doc.open(); doc.write(buildDocHTML(c,docMeta())); doc.close();
+    const bodyEl=doc.body;
+    bodyEl.style.maxWidth="none"; bodyEl.style.margin="0"; bodyEl.style.width=W+"px"; bodyEl.style.padding="34px 40px";
+    await new Promise(r=>setTimeout(r,1100));
+    try{ if(doc.fonts&&doc.fonts.ready) await doc.fonts.ready; }catch(e){}
+    const fullH=Math.max(bodyEl.scrollHeight, doc.documentElement.scrollHeight);
+    ifr.style.height=fullH+"px";
+    await new Promise(r=>setTimeout(r,300));
+    setStep("📊 Capture en images…");
+    const scale=2;
+    const canvas=await html2canvas(bodyEl,{scale:scale,backgroundColor:"#ffffff",width:W,height:fullH,windowWidth:W,windowHeight:fullH,useCORS:true,logging:false});
+    // bornes de page (16:9) sans couper un élément en deux
+    const pageHcss=Math.floor(W*9/16);
+    const kids=[].slice.call(bodyEl.children);
+    let bounds=[0],open=0;
+    kids.forEach(k=>{const top=k.offsetTop,bot=k.offsetTop+k.offsetHeight;if(bot-open>pageHcss && top>open+8){bounds.push(top);open=top;}});
+    bounds.push(fullH);
+    setStep("📊 Création du PowerPoint…");
     await loadScript("https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js");
-    const P=window.PptxGenJS; if(!P)throw new Error("lib");
+    const P=window.PptxGenJS; if(!P)throw new Error("module PowerPoint indisponible");
     const pptx=new P(); pptx.layout="LAYOUT_WIDE";
-    const NAVY="1E3A8A",ORANGE="F97316",GREY="64748B",DARK="0F1B33";
-    const meta=docMeta();
-    // Diapo de titre
-    let s=pptx.addSlide(); s.background={color:DARK};
-    s.addShape(pptx.ShapeType.rect,{x:0,y:3.05,w:13.33,h:0.08,fill:{color:ORANGE}});
-    s.addText(meta.title,{x:0.6,y:1.5,w:12.1,h:1.5,fontSize:34,bold:true,color:"FFFFFF",fontFace:"Arial"});
-    if(meta.sub)s.addText(meta.sub,{x:0.6,y:3.25,w:12.1,h:0.6,fontSize:14,color:"BFD0E8",fontFace:"Arial"});
-    s.addText("UFR STAPS Bourgogne · Ophélie CUYNET",{x:0.6,y:6.7,w:12.1,h:0.4,fontSize:11,color:"8AA0C0",fontFace:"Arial"});
-    // Sections (par titre ##) — éléments ordonnés : texte / schéma / tableau
-    const SCOLS=["F97316","3B82F6","22C55E","A855F7","EC4899","EAB308","14B8A6"];
-    const head=(sl,title)=>{sl.background={color:"FFFFFF"};sl.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.33,h:1.0,fill:{color:NAVY}});sl.addShape(pptx.ShapeType.rect,{x:0,y:1.0,w:13.33,h:0.06,fill:{color:ORANGE}});sl.addText(title,{x:0.5,y:0.12,w:12.3,h:0.76,fontSize:22,bold:true,color:"FFFFFF",valign:"middle",fontFace:"Arial"});sl.addText("WE-FORM · STAPS Course Studio",{x:0.5,y:7.05,w:12.3,h:0.3,fontSize:9,color:"94A3B8",align:"right",fontFace:"Arial"});};
-    const flow=(sl,steps,y,h)=>{const n=Math.min(steps.length,6);if(!n)return;const gap=0.32,total=12.2,bw=(total-(n-1)*gap)/n,x0=(13.33-total)/2;for(let i=0;i<n;i++){const x=x0+i*(bw+gap);sl.addShape(pptx.ShapeType.roundRect,{x:x,y:y,w:bw,h:h,fill:{color:SCOLS[i%SCOLS.length]},rectRadius:0.1});sl.addText((steps[i]||"").slice(0,70),{x:x+0.06,y:y,w:bw-0.12,h:h,align:"center",valign:"middle",fontSize:13,bold:true,color:"FFFFFF",fontFace:"Arial"});if(i<n-1)sl.addText("➜",{x:x+bw-gap*0.5,y:y,w:gap,h:h,align:"center",valign:"middle",fontSize:20,bold:true,color:"94A3B8",fontFace:"Arial"});}};
-    const txtSlide=(title,buf)=>{const sl=pptx.addSlide();head(sl,title);sl.addText(buf.map(it=>({text:(it.txt||"").slice(0,420),options:{breakLine:true,bullet:!!it.bullet,fontSize:it.sub?17:14,bold:!!it.sub,italic:!!it.quote,color:it.sub?NAVY:(it.quote?"7C2D12":"1F2937"),paraSpaceAfter:it.sub?6:13,paraSpaceBefore:it.sub?9:0}})),{x:0.6,y:1.3,w:12.13,h:5.55,valign:"middle",fontFace:"Arial",fit:"shrink"});};
-    // L'IA met en page le cours en diapositives BIEN REMPLIES
-    setStep("📊 Mise en page IA des diapos…");
-    const rr=await cl(
-      `Tu transformes un COURS STAPS en présentation PowerPoint claire et BIEN REMPLIE. Découpe le cours en diapositives qui COUVRENT TOUT le cours, dans l'ordre. Chaque diapo de contenu = 4 à 7 puces COURTES (≈ max 14 mots) : regroupe les idées pour remplir la page sans la surcharger, ne laisse JAMAIS de diapo presque vide. Choisis le bon type selon le contenu. Réponds STRICTEMENT en JSON pur, sans aucun texte autour :
-{"slides":[
- {"type":"content","title":"Titre court","bullets":["puce concrète","autre puce","..."]},
- {"type":"schema","title":"Titre","steps":["Étape 1","Étape 2","Étape 3"]},
- {"type":"table","title":"Titre","head":["Colonne 1","Colonne 2"],"rows":[["a","b"],["c","d"]]},
- {"type":"quote","title":"À retenir","text":"phrase clé importante"}
-]}
-Règles : titres courts, puces concrètes et autonomes, un "schema" quand il y a une progression/un processus, garde les tableaux importants. JSON uniquement.`,
-      `COURS :\n${c.content}`,
-      []
-    );
-    let jt=(rr||"").trim();const ja=jt.indexOf("{"),jb=jt.lastIndexOf("}");if(ja>-1&&jb>ja)jt=jt.slice(ja,jb+1);
-    let deck;try{deck=JSON.parse(jt);}catch(e){throw new Error("mise en page IA illisible — réessaie");}
-    const slides=(deck&&deck.slides)||[];
-    if(!slides.length)throw new Error("aucune diapo générée");
-    setStep("📊 Création du fichier…");
-    slides.forEach(d=>{
-      const title=stripMd(d.title||meta.title);
-      if(d.type==="table" && d.head && d.rows && d.rows.length){
-        const sl=pptx.addSlide(); head(sl,title);
-        const rows=[d.head.map(h=>({text:stripMd(String(h)),options:{bold:true,color:"FFFFFF",fill:{color:NAVY},fontSize:13}}))];
-        d.rows.forEach((r,ri)=>rows.push((r||[]).map(cc=>({text:stripMd(String(cc)),options:{fontSize:12,color:"1F2937",fill:{color:ri%2?"F1F5F9":"FFFFFF"}}}))));
-        const rh=Math.min(0.9,Math.max(0.4,5.3/rows.length));
-        sl.addTable(rows,{x:0.6,y:1.35,w:12.13,rowH:rh,border:{type:"solid",color:"D1D5DB",pt:0.5},autoPage:true,valign:"middle"});
-      } else if(d.type==="schema" && d.steps && d.steps.length){
-        const st=d.steps.map(x=>stripMd(String(x)));
-        const sl=pptx.addSlide(); head(sl,title);
-        flow(sl,st,2.9,1.5);
-        sl.addText(st.join("   →   "),{x:0.6,y:5.0,w:12.13,h:1.2,align:"center",valign:"top",fontSize:14,italic:true,color:GREY,fontFace:"Arial"});
-      } else if(d.type==="quote" && d.text){
-        const sl=pptx.addSlide(); head(sl,title);
-        sl.addShape(pptx.ShapeType.rect,{x:0.95,y:2.3,w:0.14,h:2.6,fill:{color:ORANGE}});
-        sl.addText(stripMd(d.text),{x:1.35,y:2.1,w:11,h:3,valign:"middle",fontSize:24,italic:true,bold:true,color:NAVY,fontFace:"Arial"});
-      } else {
-        const bl=(d.bullets||[]).map(x=>stripMd(String(x))).filter(Boolean);
-        const sl=pptx.addSlide(); head(sl,title);
-        if(bl.length)sl.addText(bl.map(t=>({text:t,options:{bullet:{indent:18},breakLine:true,fontSize:17,color:"1F2937",paraSpaceAfter:16}})),{x:0.7,y:1.3,w:12.0,h:5.55,valign:"middle",fontFace:"Arial",fit:"shrink"});
-      }
-    });
+    const SW=13.33,SH=7.5, pageCanvasH=Math.round(pageHcss*scale);
+    for(let i=0;i<bounds.length-1;i++){
+      const y0=Math.round(bounds[i]*scale), y1=Math.round(bounds[i+1]*scale), segH=y1-y0;
+      if(segH<=2)continue;
+      const cc=document.createElement("canvas"); cc.width=canvas.width; cc.height=Math.max(segH,pageCanvasH);
+      const ctx=cc.getContext("2d"); ctx.fillStyle="#ffffff"; ctx.fillRect(0,0,cc.width,cc.height);
+      ctx.drawImage(canvas,0,y0,canvas.width,segH,0,0,canvas.width,segH);
+      const img=cc.toDataURL("image/jpeg",0.9);
+      const ratio=cc.height/cc.width;
+      let iw=SW, ih=SW*ratio; if(ih>SH){ih=SH;iw=SH/ratio;}
+      const sl=pptx.addSlide(); sl.background={color:"FFFFFF"};
+      sl.addImage({data:img,x:(SW-iw)/2,y:0,w:iw,h:ih});
+    }
     const blob=await Promise.race([
       pptx.write({outputType:"blob"}),
-      new Promise((_,rej)=>setTimeout(()=>rej(new Error("délai dépassé")),35000))
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error("délai dépassé")),90000))
     ]);
     dl(blob, safeName(cp.theme)+".pptx");
-  }catch(e){alert("⚠️ Le PowerPoint n'a pas pu être généré ("+e.message+").\n\nEn attendant, les exports 🌐 HTML et 📄 PDF fonctionnent parfaitement. Si le souci persiste, dis-le moi.");}
-  setBusy(false);setStep("");
+  }catch(e){alert("⚠️ Le PowerPoint n'a pas pu être généré ("+e.message+").\n\nLes exports 🌐 HTML et 📄 PDF fonctionnent parfaitement.");}
+  finally{ if(ifr&&ifr.parentNode)ifr.parentNode.removeChild(ifr); setBusy(false);setStep(""); }
 }
 
 // ── SVG generators ──
