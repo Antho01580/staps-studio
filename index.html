@@ -303,6 +303,61 @@ function clearKeys(){
   CK="";PK="";setCkIn("");setPkIn("");
   try{localStorage.removeItem("staps_ck");localStorage.removeItem("staps_pk");}catch{}
 }
+// ── Édition par sélection : popup IA sur n'importe quel passage du cours ──
+const[selText,setSelText]=useState("");
+const[selPos,setSelPos]=useState({x:0,y:0});
+const[selOpen,setSelOpen]=useState(false);
+const[selBusy,setSelBusy]=useState("");
+const[selAns,setSelAns]=useState(null); // {kind:"info"|"err", text, sources?}
+const[selInstr,setSelInstr]=useState("");
+function onCourseSelect(e){
+  const s=window.getSelection&&window.getSelection();
+  const t=s?s.toString().trim():"";
+  if(t.length<2)return; // simple clic : on ne touche pas au popup (fermeture via ✕)
+  let r=null;try{r=s.getRangeAt(0).getBoundingClientRect();}catch{}
+  setSelText(t);
+  setSelPos({x:r?Math.round(r.left+r.width/2):e.clientX, y:r?Math.round(r.bottom):e.clientY});
+  setSelAns(null);setSelInstr("");setSelOpen(true);
+}
+async function selEdit(instr){
+  if(!CK){alert("⚙️ Configure d'abord ta clé API Claude (bouton ⚙️ Clés API).");setShowKeys(true);return;}
+  if(!courses[activeC])return;
+  setSelBusy("✏️ Modification en cours…");setSelAns(null);
+  try{
+    const r=await cl(
+      `Expert en ingénierie pédagogique STAPS. On te donne un COURS complet et un PASSAGE que l'utilisateur a surligné à l'intérieur. Applique la demande UNIQUEMENT sur ce passage (ou juste à cet endroit précis). Ne modifie RIEN d'autre : garde tout le reste du cours mot pour mot, la même structure, le même style et les mêmes balises ([SCHÉMA: A → B → C], [ORGANIGRAMME: Titre — Branche1 — Branche2], tableaux markdown |col|col|). Renvoie le COURS COMPLET modifié, sans aucun commentaire ni phrase d'introduction.`,
+      `COURS ACTUEL :\n${courses[activeC].content}\n\nPASSAGE SURLIGNÉ PAR L'UTILISATEUR :\n"""${selText}"""\n\nDEMANDE : ${instr}\n\nRenvoie le cours COMPLET modifié.`,
+      []
+    );
+    if(r && !/^Erreur/i.test(r)){
+      setCourses(c=>{const nc=[...c];nc[activeC]={...nc[activeC],content:r};return nc;});
+      setSelOpen(false);
+    } else setSelAns({kind:"err",text:r||"Erreur"});
+  }catch(e){setSelAns({kind:"err",text:e.message});}
+  setSelBusy("");
+}
+async function selExplain(){
+  if(!CK){alert("⚙️ Configure d'abord ta clé API Claude (bouton ⚙️ Clés API).");setShowKeys(true);return;}
+  setSelBusy("💡 Explication…");setSelAns(null);
+  try{
+    const r=await cl(
+      "Expert STAPS pédagogue. Explique de façon claire, pédagogique et sourcée le passage demandé, dans le contexte du cours. Réponds en quelques phrases.",
+      `CONTEXTE (cours) :\n${courses[activeC]?.content||""}\n\nPASSAGE :\n"""${selText}"""\n\nExplique ce passage : ce que ça signifie, d'où vient l'information, et pourquoi c'est présent dans le cours.`,
+      []
+    );
+    setSelAns({kind:"info",text:r});
+  }catch(e){setSelAns({kind:"err",text:e.message});}
+  setSelBusy("");
+}
+async function selSources(){
+  if(!PK){alert("🔍 Configure ta clé API Perplexity (bouton ⚙️ Clés API) pour la recherche de sources.");setShowKeys(true);return;}
+  setSelBusy("🔍 Recherche de sources…");setSelAns(null);
+  try{
+    const px=await ppx(`Sources académiques et officielles fiables sur ce sujet (contexte STAPS) : "${selText}". Donne 3 à 5 références avec liens et une phrase de résumé pour chacune.`);
+    setSelAns({kind:"info",text:px.c||"Aucun résultat.",sources:px.s});
+  }catch(e){setSelAns({kind:"err",text:e.message});}
+  setSelBusy("");
+}
 
 async function handleFiles(fileList, setter) {
   const processed = [];
@@ -840,6 +895,27 @@ return(<div className="app"><style>{`
 .keys-overlay{position:fixed;inset:0;background:#0a0e1ad0;backdrop-filter:blur(4px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px}
 .keys-modal{background:#111827;border:1px solid #2a3550;border-radius:14px;padding:22px;width:100%;max-width:440px;box-shadow:0 20px 60px #000a}
 
+/* Popup d'édition par sélection */
+.selpop{position:fixed;z-index:1200;width:340px;max-width:92vw;max-height:82vh;overflow:auto;background:#0d1525;border:1px solid #f9731660;border-radius:12px;box-shadow:0 16px 50px #000c;padding:12px;font-family:'Outfit',sans-serif}
+.selpop-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.selpop-x{background:none;border:none;color:#8899b5;cursor:pointer;font-size:14px;font-family:inherit;line-height:1}
+.selpop-x:hover{color:#e8ecf4}
+.selpop-sel{font-size:10px;color:#fdba74;background:#f9731612;border:1px solid #f9731630;border-radius:6px;padding:6px 8px;margin-bottom:8px;max-height:56px;overflow:auto;font-style:italic;line-height:1.4}
+.selpop-acts{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px}
+.selpop-acts button{padding:7px 8px;border-radius:6px;border:1px solid #2a3550;background:#111827;color:#e8ecf4;cursor:pointer;font-size:10px;font-weight:500;font-family:inherit;text-align:left}
+.selpop-acts button:hover{background:#1a2236;border-color:#f9731650;color:#fdba74}
+.selpop-custom{display:flex;gap:4px;margin-bottom:2px}
+.selpop-custom input{flex:1;padding:7px 8px;border-radius:6px;border:1px solid #2a3550;background:#1a2236;color:#e8ecf4;font-size:10px;font-family:inherit;outline:none}
+.selpop-custom input:focus{border-color:#f97316}
+.selpop-custom button{padding:7px 12px;border-radius:6px;border:none;background:linear-gradient(135deg,#f97316,#c2410c);color:#fff;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit}
+.selpop-custom button:disabled{opacity:.5;cursor:default}
+.selpop-busy{font-size:11px;color:#fdba74;text-align:center;padding:8px;animation:sh 2s infinite}
+.selpop-ans{margin-top:8px;max-height:240px;overflow:auto;background:#111827;border:1px solid #2a3550;border-radius:8px;padding:10px;font-size:11px;line-height:1.5}
+.selpop-ans.err{border-color:#ef444450;color:#fca5a5}
+.selpop-src{margin-top:6px;display:flex;flex-direction:column;gap:2px;border-top:1px solid #2a3550;padding-top:6px}
+.selpop-src a{font-size:9px;color:#93c5fd;text-decoration:none;word-break:break-all}
+.sel-hint{display:flex;align-items:center;gap:6px;background:#f9731610;border:1px solid #f9731630;border-radius:6px;padding:7px 10px;margin-bottom:10px;font-size:10px;color:#fdba74}
+
 /* File upload */
 
 /* ═══ RICH PRESENTATION RENDERER ═══ */
@@ -897,7 +973,7 @@ return(<div className="app"><style>{`
 <button className="nb" style={{color:CK?"#22c55e":"#f97316",fontWeight:600}} onClick={()=>{setCkIn(CK);setPkIn(PK);setShowKeys(true);}} title="Gérer les clés API">⚙️ Clés API {CK?"✓":"⚠️"}</button></nav>
 </header>
 
-{showKeys&&<div className="keys-overlay" onClick={e=>{if(e.target===e.currentTarget&&CK)setShowKeys(false);}}>
+{showKeys&&<div className="keys-overlay" onClick={e=>{if(e.target===e.currentTarget)setShowKeys(false);}}>
 <div className="keys-modal">
 <h2 style={{fontSize:18,fontWeight:800,marginBottom:4}}>⚙️ Clés API</h2>
 <p style={{fontSize:11,color:"#8899b5",marginBottom:14,lineHeight:1.5}}>Tes clés sont enregistrées <strong>uniquement dans ce navigateur</strong> et ne sont jamais publiées dans le code du site. Renseigne-les une fois.</p>
@@ -913,10 +989,34 @@ return(<div className="app"><style>{`
 </div>
 <div style={{display:"flex",gap:8,alignItems:"center"}}>
 <button className="gn" style={{marginTop:0,flex:1}} onClick={saveKeys} disabled={!ckIn.trim()}>💾 Enregistrer</button>
-{CK&&<button className="bs" onClick={()=>setShowKeys(false)}>Fermer</button>}
+<button className="bs" onClick={()=>setShowKeys(false)}>Fermer</button>
 <button className="bs" style={{color:"#ef4444",borderColor:"#ef444440"}} onClick={()=>{if(confirm("Effacer les clés de ce navigateur ?"))clearKeys();}}>🗑️ Effacer</button>
 </div>
 </div>
+</div>}
+
+{selOpen&&<div className="selpop" style={{left:Math.max(8,Math.min(selPos.x-170,(typeof window!=="undefined"?window.innerWidth:1200)-348)),top:selPos.y+10}}>
+<div className="selpop-hd"><span style={{fontSize:12,fontWeight:700}}>✨ Modifier avec l'IA</span><button className="selpop-x" onClick={()=>setSelOpen(false)}>✕</button></div>
+<div className="selpop-sel">« {selText.length>120?selText.slice(0,120)+"…":selText} »</div>
+<div className="selpop-acts">
+<button onClick={()=>selEdit("Reformule ce passage de façon plus claire, en gardant le même sens.")}>✏️ Reformuler</button>
+<button onClick={()=>selEdit("Développe et enrichis ce passage avec plus de détails, exemples et précisions.")}>➕ Développer</button>
+<button onClick={()=>selEdit("Raccourcis ce passage en gardant l'essentiel.")}>✂️ Raccourcir</button>
+<button onClick={()=>selEdit("À l'endroit de ce passage, ajoute un schéma pédagogique pertinent au format [SCHÉMA: étape1 → étape2 → étape3].")}>📊 Schéma</button>
+<button onClick={()=>selEdit("Ajoute un exemple concret et sportif lié à ce passage.")}>⚽ Exemple</button>
+<button onClick={()=>selEdit("Corrige et améliore ce passage (clarté, exactitude, pédagogie).")}>✅ Corriger</button>
+<button onClick={selExplain}>💡 Expliquer</button>
+<button onClick={selSources}>🔍 Sources</button>
+</div>
+<div className="selpop-custom">
+<input value={selInstr} onChange={e=>setSelInstr(e.target.value)} placeholder="Demande perso : « transforme en QCM », « ajoute une définition »…" onKeyDown={e=>{if(e.key==="Enter"&&selInstr.trim())selEdit(selInstr.trim());}}/>
+<button onClick={()=>selInstr.trim()&&selEdit(selInstr.trim())} disabled={!selInstr.trim()||!!selBusy}>Appliquer</button>
+</div>
+{selBusy&&<div className="selpop-busy">{selBusy}</div>}
+{selAns&&<div className={`selpop-ans ${selAns.kind==="err"?"err":""}`}>
+<RichRenderer text={selAns.text} mode="text"/>
+{selAns.sources&&selAns.sources.length>0&&<div className="selpop-src">{selAns.sources.map((s,i)=><a key={i} href={s} target="_blank" rel="noopener noreferrer">[{i+1}] {s.length>50?s.slice(0,50)+"…":s}</a>)}</div>}
+</div>}
 </div>}
 
 <main className="mn">
@@ -1083,8 +1183,9 @@ return(<div className="app"><style>{`
 </div>
 </div>
 
+<div className="sel-hint">🖱️ <strong>Astuce :</strong> sélectionne n'importe quel passage du cours pour le modifier, l'expliquer ou ajouter un schéma avec l'IA.</div>
 <div className="rg">
-<div className="cbox"><RichRenderer text={cur?.content} mode={viewMode}/></div>
+<div className="cbox" onMouseUp={onCourseSelect}><RichRenderer text={cur?.content} mode={viewMode}/></div>
 <div className="ebar">
 <h3 style={{fontSize:13,fontWeight:700,marginBottom:4}}>🖊️ Modifier{courses.length>1?` (Cours ${activeC+1})`:""}</h3>
 <div style={{display:"flex",flexDirection:"column",gap:2,marginBottom:6}}>
