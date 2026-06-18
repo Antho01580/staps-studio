@@ -29,6 +29,17 @@ let CK = localStorage.getItem("staps_ck") || "";   // Clé Anthropic (Claude)
 let PK = localStorage.getItem("staps_pk") || "";   // Clé Perplexity (optionnelle)
 const MODEL = "claude-sonnet-4-6";                  // modèle Claude actuel (l'ancien claude-sonnet-4-20250514 est retiré)
 
+/* ─── Estimation du coût des appels API (tokens réels × tarifs publics → €) ─── */
+const PRICE={ci:3, co:15, pi:3, po:15};   // $ / million de tokens (Claude Sonnet 4.6 ; Perplexity sonar-pro ≈)
+const USD_TO_EUR=0.92;
+const COST={usd:0,ci:0,co:0,pi:0,po:0,calls:0,_subs:[]};
+try{const sv=JSON.parse(localStorage.getItem("staps_cost")||"null");if(sv)Object.assign(COST,sv,{_subs:[]});}catch(e){}
+function costNotify(){try{localStorage.setItem("staps_cost",JSON.stringify({usd:COST.usd,ci:COST.ci,co:COST.co,pi:COST.pi,po:COST.po,calls:COST.calls}));}catch(e){}COST._subs.forEach(f=>{try{f();}catch(e){}});}
+function addClaudeUsage(u){if(!u)return;const i=u.input_tokens||0,o=u.output_tokens||0;COST.ci+=i;COST.co+=o;COST.usd+=i/1e6*PRICE.ci+o/1e6*PRICE.co;COST.calls++;costNotify();}
+function addPplxUsage(u){if(!u)return;const i=u.prompt_tokens||0,o=u.completion_tokens||0;COST.pi+=i;COST.po+=o;COST.usd+=i/1e6*PRICE.pi+o/1e6*PRICE.po+0.006;COST.calls++;costNotify();}
+function costEUR(){return COST.usd*USD_TO_EUR;}
+function resetCost(){COST.usd=0;COST.ci=0;COST.co=0;COST.pi=0;COST.po=0;COST.calls=0;costNotify();}
+
 /* ─── UE DATABASE (compact) ─── */
 const DB={
 "TC-S1":{l:"Tronc Commun · S1",f:"Licence STAPS TC",lv:"L1",u:[
@@ -190,7 +201,7 @@ const SP=["Football","Rugby","Basketball","Handball","Volleyball","Tennis","Athl
 const CT=[{id:"cm",n:"CM",i:"🎓"},{id:"td",n:"TD",i:"📝"},{id:"tp",n:"TP",i:"🏃"},{id:"cas",n:"Cas Pratique",i:"🧩"},{id:"groupe",n:"Groupe",i:"👥"},{id:"eval",n:"Évaluation",i:"✅"},{id:"seance",n:"Séance Sport",i:"⚡"},{id:"hybride",n:"Hybride",i:"🔄"}];
 const OO=[{id:"schemas",n:"Schémas"},{id:"organigrammes",n:"Organigrammes"},{id:"tableaux",n:"Tableaux"},{id:"cas_concrets",n:"Cas concrets"},{id:"exercices",n:"Exercices"},{id:"quiz",n:"Quiz/QCM"},{id:"bibliographie",n:"Bibliographie"},{id:"fiches",n:"Fiches synthèse"}];
 
-async function ppx(p){try{const r=await fetch("https://api.perplexity.ai/chat/completions",{method:"POST",headers:{"Authorization":`Bearer ${PK}`,"Content-Type":"application/json"},body:JSON.stringify({model:"sonar-pro",messages:[{role:"system",content:"Expert STAPS, pédagogie universitaire, formation sportive France. Toujours sourcé."},{role:"user",content:p}],max_tokens:4000,temperature:.3,return_citations:true})});const d=await r.json();return{c:d.choices?.[0]?.message?.content||"",s:d.citations||[]};}catch(e){return{c:"",s:[]};}}
+async function ppx(p){try{const r=await fetch("https://api.perplexity.ai/chat/completions",{method:"POST",headers:{"Authorization":`Bearer ${PK}`,"Content-Type":"application/json"},body:JSON.stringify({model:"sonar-pro",messages:[{role:"system",content:"Expert STAPS, pédagogie universitaire, formation sportive France. Toujours sourcé."},{role:"user",content:p}],max_tokens:4000,temperature:.3,return_citations:true})});const d=await r.json();addPplxUsage(d.usage);return{c:d.choices?.[0]?.message?.content||"",s:d.citations||[]};}catch(e){return{c:"",s:[]};}}
 async function cl(s, u, files=[]){
   try {
     // Build multimodal content: text + attached files (PDF/images)
@@ -214,6 +225,7 @@ async function cl(s, u, files=[]){
       body:JSON.stringify({model:MODEL,max_tokens:8000,system:s,messages:[{role:"user",content: files.length > 0 ? content : u}]})
     });
     const d = await r.json();
+    addClaudeUsage(d.usage);
     return d.content?.[0]?.text || d.error?.message || "Erreur";
   } catch(e){return "Erreur: "+e.message;}
 }
@@ -253,7 +265,7 @@ async function processFile(file) {
 }
 
 // ── Export : analyse du cours en blocs + générateurs HTML / PPTX / PDF ──
-function stripMd(s){return (s||"").replace(/\*\*(.*?)\*\*/g,"$1").replace(/\s*\[(\d+)\]/g,"").trim();}
+function stripMd(s){return (s||"").replace(/\*\*(.*?)\*\*/g,"$1").replace(/\*(.*?)\*/g,"$1").replace(/`/g,"").replace(/\s*\[(\d+)\]/g,"").replace(/\s{2,}/g," ").trim();}
 function inlineHTML(s){
   let h=(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   h=h.replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>");
@@ -348,6 +360,8 @@ const editFileRef=useRef(null);
 const[showKeys,setShowKeys]=useState(!CK); // ouvre le réglage au 1er lancement si pas de clé
 const[ckIn,setCkIn]=useState(CK);
 const[pkIn,setPkIn]=useState(PK);
+const[costTick,setCostTick]=useState(0); // rafraîchit le badge de coût en direct
+useEffect(()=>{const f=()=>setCostTick(t=>t+1);COST._subs.push(f);return ()=>{const i=COST._subs.indexOf(f);if(i>-1)COST._subs.splice(i,1);};},[]);
 function saveKeys(){
   CK=ckIn.trim(); PK=pkIn.trim();
   try{localStorage.setItem("staps_ck",CK);localStorage.setItem("staps_pk",PK);}catch{}
@@ -741,17 +755,18 @@ async function exportPPTX(){
       if(b.t==="table")sec.tables.push(b);
       else if(b.t==="h3"||b.t==="h4")sec.items.push({txt:stripMd(b.x),sub:true});
       else if(b.t==="schema")sec.items.push({txt:"➜ "+stripMd(b.x),dim:true});
-      else if(b.t==="quote")sec.items.push({txt:"💡 "+stripMd(b.x),quote:true});
+      else if(b.t==="quote")sec.items.push({txt:stripMd(b.x),quote:true});
       else if(b.t==="li")sec.items.push({txt:stripMd(b.x),bullet:true});
       else if(b.t==="p")sec.items.push({txt:stripMd(b.x)});
     });
     const head=(sl,title)=>{sl.background={color:"FFFFFF"};sl.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.33,h:1.0,fill:{color:NAVY}});sl.addShape(pptx.ShapeType.rect,{x:0,y:1.0,w:13.33,h:0.06,fill:{color:ORANGE}});sl.addText(title,{x:0.5,y:0.12,w:12.3,h:0.76,fontSize:22,bold:true,color:"FFFFFF",valign:"middle",fontFace:"Arial"});sl.addText("WE-FORM · STAPS Course Studio",{x:0.5,y:7.05,w:12.3,h:0.3,fontSize:9,color:"94A3B8",align:"right",fontFace:"Arial"});};
     sections.forEach(sec=>{
-      const chunks=[]; for(let i=0;i<sec.items.length;i+=9)chunks.push(sec.items.slice(i,i+9));
-      if(!chunks.length)chunks.push([]);
+      const chunks=[]; let cur=[],ln=0;
+      sec.items.forEach(it=>{const L=(it.txt||"").length+14;if(cur.length&&(ln+L>540||cur.length>=7)){chunks.push(cur);cur=[];ln=0;}cur.push(it);ln+=L;});
+      if(cur.length)chunks.push(cur); if(!chunks.length)chunks.push([]);
       chunks.forEach((ch,ci)=>{
         const sl=pptx.addSlide(); head(sl,sec.title+(ci>0?" (suite)":""));
-        if(ch.length)sl.addText(ch.map(it=>({text:it.txt,options:{bullet:it.bullet?{indent:14}:false,fontSize:it.sub?16:13,bold:!!it.sub,italic:!!it.quote,color:it.sub?NAVY:(it.dim?GREY:"1F2937"),paraSpaceAfter:6}})),{x:0.6,y:1.3,w:12.1,h:5.6,valign:"top",fontFace:"Arial"});
+        if(ch.length)sl.addText(ch.map(it=>({text:(it.txt||"").slice(0,400),options:{breakLine:true,bullet:!!it.bullet,fontSize:it.sub?15:12.5,bold:!!it.sub,italic:!!it.quote,color:it.sub?NAVY:(it.quote?"7C2D12":(it.dim?GREY:"1F2937")),paraSpaceAfter:it.sub?4:9,paraSpaceBefore:it.sub?7:0}})),{x:0.55,y:1.28,w:12.25,h:5.55,valign:"top",fontFace:"Arial",fit:"shrink"});
       });
       sec.tables.forEach(tb=>{
         const sl=pptx.addSlide(); head(sl,sec.title+" — tableau");
@@ -1156,6 +1171,8 @@ return(<div className="app"><style>{`
 *::-webkit-scrollbar{width:4px}*::-webkit-scrollbar-track{background:#111827}*::-webkit-scrollbar-thumb{background:#374463;border-radius:2px}
 
 /* Réglage clés API */
+.cost-badge{padding:6px 10px;border-radius:6px;background:#14b8a615;border:1px solid #14b8a640;color:#5eead4;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;align-self:center}
+.cost-badge:hover{background:#14b8a628}
 .keys-overlay{position:fixed;inset:0;background:#0a0e1ad0;backdrop-filter:blur(4px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px}
 .keys-modal{background:#111827;border:1px solid #2a3550;border-radius:14px;padding:22px;width:100%;max-width:440px;box-shadow:0 20px 60px #000a}
 
@@ -1272,7 +1289,8 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f97316aa}
 <div className="hdr-l"><div className="logo">⚡</div><div><div style={{fontSize:14,fontWeight:700}}>STAPS Course Studio</div><div style={{fontSize:9,color:"#8899b5"}}>UFR STAPS Bourgogne · Ophélie CUYNET</div></div></div>
 <nav className="nav">{[{id:"home",l:"🏠 Accueil"},{id:"formations",l:"📚 Formations"},{id:"create",l:"✨ Créer"},{id:"result",l:"📄 Résultat",off:courses.length===0},{id:"history",l:"🕐 Historique"}].map(n=>
 <button key={n.id} className={`nb ${pg===n.id?"a":""} ${n.off?"off":""}`} onClick={()=>setPg(n.id)}>{n.l}</button>)}
-<button className="nb" style={{color:CK?"#22c55e":"#f97316",fontWeight:600}} onClick={()=>{setCkIn(CK);setPkIn(PK);setShowKeys(true);}} title="Gérer les clés API">⚙️ Clés API {CK?"✓":"⚠️"}</button></nav>
+<button className="nb" style={{color:CK?"#22c55e":"#f97316",fontWeight:600}} onClick={()=>{setCkIn(CK);setPkIn(PK);setShowKeys(true);}} title="Gérer les clés API">⚙️ Clés API {CK?"✓":"⚠️"}</button>
+<span className="cost-badge" onClick={()=>{if(confirm("Remettre le compteur de coût estimé à zéro ?"))resetCost();}} title={"💶 Estimation du coût des appels IA (tokens réels × tarifs publics, convertis en €).\nClaude : "+COST.ci.toLocaleString("fr-FR")+" tokens entrée / "+COST.co.toLocaleString("fr-FR")+" sortie\nPerplexity : "+COST.pi.toLocaleString("fr-FR")+" entrée / "+COST.po.toLocaleString("fr-FR")+" sortie\n"+COST.calls+" appels au total.\n(C'est une estimation, pas la facture réelle.) Clic = remise à zéro."}>💶 ≈ {costEUR().toFixed(2).replace(".",",")} €</span></nav>
 </header>
 
 {showKeys&&<div className="keys-overlay" onClick={e=>{if(e.target===e.currentTarget)setShowKeys(false);}}>
