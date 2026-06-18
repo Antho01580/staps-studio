@@ -392,6 +392,36 @@ const[vidTitle,setVidTitle]=useState("");
 const[vidIdx,setVidIdx]=useState(0);
 const[vidPlaying,setVidPlaying]=useState(true);
 const[vidVoice,setVidVoice]=useState(true);
+const[srcBusy,setSrcBusy]=useState("");
+async function sourceAll(){
+  if(!CK){alert("⚙️ Configure d'abord ta clé API Claude (bouton ⚙️ Clés API).");setShowKeys(true);return;}
+  const c=courses[activeC]; if(!c)return;
+  let srcs=c.sources||[];
+  setSrcBusy("🔗 Sourçage…");
+  try{
+    if((!srcs||!srcs.length) && PK){
+      setSrcBusy("🔍 Recherche de sources…");
+      const px=await ppx(`Donne le PLUS de sources fiables possible (sites, articles, références académiques) sur ce sujet STAPS : "${cp.theme||c.ue||c.semL}". Liste un maximum de références pertinentes avec leurs liens.`);
+      srcs=px.s||[];
+    }
+    if(!srcs||!srcs.length){
+      alert("Aucune source disponible à attribuer.\n\nActive la recherche en configurant ta clé Perplexity (⚙️ Clés API), ou régénère le cours avec Perplexity activé.");
+      setSrcBusy("");return;
+    }
+    setSrcBusy("🔗 Attribution à chaque partie…");
+    const srcList=srcs.map((s,i)=>`[${i+1}] ${s}`).join("\n");
+    const r=await cl(
+      `Tu es expert STAPS. On te donne un COURS et une liste de SOURCES numérotées. TÂCHE : sourcer PRESQUE TOUTES les parties du cours. Ajoute une citation [N] à la fin de PRESQUE chaque paragraphe, chaque point de liste, et chaque ligne/cellule de tableau pertinente, en choisissant le ou les numéros de source les plus pertinents (réutilise la même source plusieurs fois si besoin, combine [N][M] si plusieurs s'appliquent). OBJECTIF : qu'en survolant toutes les sources, la quasi-totalité du cours soit couverte. NE CHANGE RIEN d'autre : ni le texte, ni la structure, ni les balises ([SCHÉMA: ...], [ORGANIGRAMME: ...], titres #, tableaux |..|). Conserve les [N] déjà présents. Renvoie le COURS COMPLET, sans aucun commentaire.`,
+      `SOURCES :\n${srcList}\n\nCOURS :\n${c.content}\n\nRenvoie le cours complet avec les citations [N] ajoutées partout où c'est pertinent.`,
+      []
+    );
+    if(r && !/^Erreur/i.test(r)){
+      pushUndo(c.content);
+      setCourses(cc=>{const nc=[...cc];nc[activeC]={...nc[activeC],content:r,sources:srcs};return nc;});
+    } else alert("Échec du sourçage : "+(r||"erreur"));
+  }catch(e){alert("Erreur : "+e.message);}
+  setSrcBusy("");
+}
 function closeVid(){setVidOpen(false);setVidPlaying(false);try{window.speechSynthesis&&window.speechSynthesis.cancel();}catch(e){}}
 async function genRecap(){
   if(!CK){alert("⚙️ Configure d'abord ta clé API Claude (bouton ⚙️ Clés API).");setShowKeys(true);return;}
@@ -574,6 +604,10 @@ RÈGLES VISUELLES — TRÈS IMPORTANT:
 - Numérote les étapes 1. 2. 3. pour les processus
 - Ajoute des sous-titres ### pour structurer chaque section
 - GÉNÈRE AU MINIMUM 3 schémas et 1 organigramme par cours
+
+SOURÇAGE SYSTÉMATIQUE — TRÈS IMPORTANT:
+- Termine PRESQUE CHAQUE paragraphe, point de liste et ligne de tableau par une citation [N] renvoyant aux SOURCES numérotées de la recherche fournie plus bas.
+- Vise une couverture QUASI TOTALE : en survolant toutes les sources, presque tout le cours doit être attribué. Réutilise une même source [N] plusieurs fois si besoin, combine [N][M] quand plusieurs sources s'appliquent.
 
 Objectifs pédagogiques par section. Biblio complète sourcée.${n>1?` Tu génères le cours ${i+1} d'une séquence de ${n} cours progressifs.`:""}${createFiles.length>0?" Des documents de référence sont joints : exploite-les au maximum pour enrichir le cours, cite les auteurs et données qu'ils contiennent.":""}`,
         `${prompt}\n\nRECHERCHE PERPLEXITY:\n${px.c}\n${px.s.length?`SOURCES:\n${px.s.map((c,j)=>`[${j+1}] ${c}`).join('\n')}`:""}\nGénère cours COMPLET, RICHE, SOURCÉ.`,
@@ -1453,6 +1487,7 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f97316aa}
 <div style={{display:"flex",gap:6,fontSize:10,color:"#8899b5",marginTop:2,flexWrap:"wrap"}}>{cur?.semL&&<span>📚 {cur.semL}</span>}{cur?.ue&&<span>📝 {cur.ue}</span>}</div></div>
 <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
 <button className="ab" style={{color:"#fff",background:"linear-gradient(135deg,#a855f7,#ec4899)",border:"none",fontWeight:700}} onClick={genRecap} disabled={vidBusy||!cur}>{vidBusy?"⏳ Création de la vidéo…":"🎬 Vidéo résumé"}</button>
+<button className="ab" style={{color:"#5eead4",borderColor:"#14b8a655",fontWeight:600}} onClick={sourceAll} disabled={!!srcBusy||!cur} title="Attribuer une source à (presque) toutes les parties du cours">{srcBusy||"🔗 Tout sourcer"}</button>
 {undoStk.length>0&&<button className="ab" style={{color:"#fdba74",borderColor:"#f9731640"}} onClick={doUndo}>↩️ Annuler</button>}
 <button className="ab" style={{color:"#fdba74",borderColor:"#f9731640",fontWeight:600}} onClick={exportHTML}>🌐 HTML</button>
 <button className="ab" style={{color:"#fca5a5",borderColor:"#ef444440",fontWeight:600}} onClick={exportPDF}>📄 PDF</button>
