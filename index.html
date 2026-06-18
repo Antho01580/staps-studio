@@ -319,20 +319,44 @@ function onCourseSelect(e){
   setSelPos({x:r?Math.round(r.left+r.width/2):e.clientX, y:r?Math.round(r.bottom):e.clientY});
   setSelAns(null);setSelInstr("");setSelOpen(true);
 }
+function applyContent(txt){setCourses(c=>{const nc=[...c];nc[activeC]={...nc[activeC],content:txt};return nc;});}
 async function selEdit(instr){
   if(!CK){alert("⚙️ Configure d'abord ta clé API Claude (bouton ⚙️ Clés API).");setShowKeys(true);return;}
   if(!courses[activeC])return;
-  setSelBusy("✏️ Modification en cours…");setSelAns(null);
+  setSelBusy("✏️ Modification…");setSelAns(null);
+  const content=courses[activeC].content;
   try{
+    // 1) Méthode CIBLÉE (rapide) : l'IA ne renvoie que le fragment exact + sa version modifiée
     const r=await cl(
-      `Expert en ingénierie pédagogique STAPS. On te donne un COURS complet et un PASSAGE que l'utilisateur a surligné à l'intérieur. Applique la demande UNIQUEMENT sur ce passage (ou juste à cet endroit précis). Ne modifie RIEN d'autre : garde tout le reste du cours mot pour mot, la même structure, le même style et les mêmes balises ([SCHÉMA: A → B → C], [ORGANIGRAMME: Titre — Branche1 — Branche2], tableaux markdown |col|col|). Renvoie le COURS COMPLET modifié, sans aucun commentaire ni phrase d'introduction.`,
-      `COURS ACTUEL :\n${courses[activeC].content}\n\nPASSAGE SURLIGNÉ PAR L'UTILISATEUR :\n"""${selText}"""\n\nDEMANDE : ${instr}\n\nRenvoie le cours COMPLET modifié.`,
+      `Tu reçois un COURS complet et un PASSAGE surligné par l'utilisateur. Étapes :
+1) Retrouve dans le cours le fragment EXACT (copié mot pour mot tel qu'il apparaît, AVEC ses balises markdown : **gras**, [SCHÉMA: ...], [ORGANIGRAMME: ...], lignes de tableau |..|) qui correspond au passage surligné.
+2) Applique la demande UNIQUEMENT à ce fragment.
+Réponds STRICTEMENT dans ce format, sans aucun autre texte :
+[[ORIGINAL]]
+(le fragment exact copié du cours, sans rien changer)
+[[NOUVEAU]]
+(le fragment modifié)
+[[FIN]]`,
+      `COURS :\n${content}\n\nPASSAGE SURLIGNÉ :\n"""${selText}"""\n\nDEMANDE : ${instr}`,
       []
     );
-    if(r && !/^Erreur/i.test(r)){
-      setCourses(c=>{const nc=[...c];nc[activeC]={...nc[activeC],content:r};return nc;});
-      setSelOpen(false);
-    } else setSelAns({kind:"err",text:r||"Erreur"});
+    if(r && r.indexOf("[[ORIGINAL]]")>-1 && r.indexOf("[[NOUVEAU]]")>-1 && r.indexOf("[[FIN]]")>-1){
+      const oldT=r.split("[[ORIGINAL]]")[1].split("[[NOUVEAU]]")[0].replace(/^\n+|\n+$/g,"");
+      const newT=r.split("[[NOUVEAU]]")[1].split("[[FIN]]")[0].replace(/^\n+|\n+$/g,"");
+      if(oldT && content.indexOf(oldT)>-1){
+        applyContent(content.replace(oldT,function(){return newT;}));
+        setSelOpen(false);setSelBusy("");return;
+      }
+    }
+    // 2) Repli FIABLE (plus lent) : régénère le cours complet si le fragment n'a pas été retrouvé
+    setSelBusy("✏️ Application (cours complet)…");
+    const full=await cl(
+      `Expert STAPS. On te donne un COURS et un PASSAGE surligné. Applique la demande uniquement à ce passage, garde tout le reste mot pour mot et les balises ([SCHÉMA:],[ORGANIGRAMME:],tableaux). Renvoie le COURS COMPLET modifié, sans commentaire.`,
+      `COURS :\n${content}\n\nPASSAGE :\n"""${selText}"""\n\nDEMANDE : ${instr}\n\nRenvoie le cours COMPLET modifié.`,
+      []
+    );
+    if(full && !/^Erreur/i.test(full)){applyContent(full);setSelOpen(false);}
+    else setSelAns({kind:"err",text:full||"Erreur"});
   }catch(e){setSelAns({kind:"err",text:e.message});}
   setSelBusy("");
 }
