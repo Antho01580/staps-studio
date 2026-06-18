@@ -310,6 +310,22 @@ const[selOpen,setSelOpen]=useState(false);
 const[selBusy,setSelBusy]=useState("");
 const[selAns,setSelAns]=useState(null); // {kind:"info"|"err", text, sources?}
 const[selInstr,setSelInstr]=useState("");
+// Surlignage par source + annulation (undo)
+const[hovSrc,setHovSrc]=useState(null);
+const[undoStk,setUndoStk]=useState([]);
+useEffect(()=>{
+  const box=document.querySelector(".cbox"); if(!box)return;
+  box.querySelectorAll(".src-hl").forEach(el=>el.classList.remove("src-hl"));
+  box.querySelectorAll(".cite.on").forEach(el=>el.classList.remove("on"));
+  if(hovSrc==null)return;
+  box.querySelectorAll('.cite[data-src="'+hovSrc+'"]').forEach(c=>{
+    c.classList.add("on");
+    const blk=c.closest(".rv-p,.rv-li,.rv-num-item,.rv-callout,.rv-h3,.rv-intro-card,.md-p,.md-li,td,th");
+    if(blk)blk.classList.add("src-hl");
+  });
+},[hovSrc,activeC,viewMode,courses]);
+function pushUndo(prev){if(prev)setUndoStk(u=>[...u,prev].slice(-20));}
+function doUndo(){setUndoStk(u=>{if(!u.length)return u;const last=u[u.length-1];setCourses(c=>{const nc=[...c];if(nc[activeC])nc[activeC]={...nc[activeC],content:last};return nc;});return u.slice(0,-1);});}
 function onCourseSelect(e){
   const s=window.getSelection&&window.getSelection();
   const t=s?s.toString().trim():"";
@@ -336,7 +352,8 @@ Réponds STRICTEMENT dans ce format, sans aucun autre texte :
 (le fragment exact copié du cours, sans rien changer)
 [[NOUVEAU]]
 (le fragment modifié)
-[[FIN]]`,
+[[FIN]]
+RÈGLES IMPORTANTES pour le fragment modifié : garde un markdown propre. N'utilise JAMAIS de bloc de code (\`\`\`). Ne mets JAMAIS un tableau à l'intérieur d'une citation (>). Un tableau doit être en lignes |col|col| normales, une citation en "> texte" sur une seule ligne.`,
       `COURS :\n${content}\n\nPASSAGE SURLIGNÉ :\n"""${selText}"""\n\nDEMANDE : ${instr}`,
       []
     );
@@ -344,6 +361,7 @@ Réponds STRICTEMENT dans ce format, sans aucun autre texte :
       const oldT=r.split("[[ORIGINAL]]")[1].split("[[NOUVEAU]]")[0].replace(/^\n+|\n+$/g,"");
       const newT=r.split("[[NOUVEAU]]")[1].split("[[FIN]]")[0].replace(/^\n+|\n+$/g,"");
       if(oldT && content.indexOf(oldT)>-1){
+        pushUndo(content);
         applyContent(content.replace(oldT,function(){return newT;}));
         setSelOpen(false);setSelBusy("");return;
       }
@@ -355,7 +373,7 @@ Réponds STRICTEMENT dans ce format, sans aucun autre texte :
       `COURS :\n${content}\n\nPASSAGE :\n"""${selText}"""\n\nDEMANDE : ${instr}\n\nRenvoie le cours COMPLET modifié.`,
       []
     );
-    if(full && !/^Erreur/i.test(full)){applyContent(full);setSelOpen(false);}
+    if(full && !/^Erreur/i.test(full)){pushUndo(content);applyContent(full);setSelOpen(false);}
     else setSelAns({kind:"err",text:full||"Erreur"});
   }catch(e){setSelAns({kind:"err",text:e.message});}
   setSelBusy("");
@@ -482,6 +500,7 @@ async function doEdit(){if(!edit||!courses[activeC])return;setEditing(true);try{
     `COURS ACTUEL:\n${courses[activeC].content}\n\nMODIFICATION DEMANDÉE:\n${edit}${editCtx}\n\nRenvoie le cours COMPLET modifié.`,
     editFiles
   );
+  pushUndo(courses[activeC].content);
   setCourses(c=>{const nc=[...c];nc[activeC]={...nc[activeC],content:r};return nc;});setEdit("");setEditFiles([]);
 }catch(e){alert(e.message);}setEditing(false);}
 
@@ -603,10 +622,20 @@ function parseOrgItems(text){
   return {root: parts[0]||"Organisation", children: parts.slice(1).length>0?parts.slice(1):["Élément 1","Élément 2","Élément 3"]};
 }
 
-// ── Inline bold renderer ──
+// ── Inline : gras **..** + citations [N] (surlignables par source) ──
+function citeNodes(str,kp){
+  const out=[];let last=0,m,idx=0;const re=/\[(\d+)\]/g;
+  while((m=re.exec(str))){
+    if(m.index>last)out.push(str.slice(last,m.index));
+    out.push(<span key={kp+"-c"+idx} className="cite" data-src={m[1]}>[{m[1]}]</span>);
+    last=m.index+m[0].length;idx++;
+  }
+  if(last<str.length)out.push(str.slice(last));
+  return out.length?out:str;
+}
 function renderInline(text){
   const parts=text.split(/\*\*(.*?)\*\*/g);
-  return parts.map((p,i)=> i%2===1 ? <strong key={i} style={{color:"#fdba74"}}>{p}</strong> : p);
+  return parts.map((p,i)=> i%2===1 ? <strong key={i} style={{color:"#fdba74"}}>{p}</strong> : <React.Fragment key={i}>{citeNodes(p,"i"+i)}</React.Fragment>);
 }
 
 // ── Parse markdown table ──
@@ -939,6 +968,11 @@ return(<div className="app"><style>{`
 .selpop-src{margin-top:6px;display:flex;flex-direction:column;gap:2px;border-top:1px solid #2a3550;padding-top:6px}
 .selpop-src a{font-size:9px;color:#93c5fd;text-decoration:none;word-break:break-all}
 .sel-hint{display:flex;align-items:center;gap:6px;background:#f9731610;border:1px solid #f9731630;border-radius:6px;padding:7px 10px;margin-bottom:10px;font-size:10px;color:#fdba74}
+/* Citations [N] + surlignage par source */
+.cite{color:#93c5fd;font-weight:600;font-size:.88em;padding:0 1px;border-radius:3px;transition:all .12s}
+.cite.on{background:#f97316;color:#fff;padding:0 4px;box-shadow:0 0 8px #f9731680}
+.src-hl{background:#f9731618;border-radius:6px;box-shadow:0 0 0 2px #f9731566;transition:background .12s}
+td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f9731580}
 
 /* File upload */
 
@@ -1184,6 +1218,7 @@ return(<div className="app"><style>{`
 <div><h2 className="sec-t">📄 {courses.length>1?`Séquence de ${courses.length} cours`:"Cours Généré"}</h2>
 <div style={{display:"flex",gap:6,fontSize:10,color:"#8899b5",marginTop:2,flexWrap:"wrap"}}>{cur?.semL&&<span>📚 {cur.semL}</span>}{cur?.ue&&<span>📝 {cur.ue}</span>}</div></div>
 <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+{undoStk.length>0&&<button className="ab" style={{color:"#fdba74",borderColor:"#f9731640"}} onClick={doUndo}>↩️ Annuler</button>}
 <button className="ab" onClick={exportMD}>💾 .md</button>
 <button className="ab" onClick={exportJSON}>📤 JSON</button>
 <button className="ab" onClick={exportPostMessage}>📡 postMessage</button>
@@ -1230,7 +1265,7 @@ return(<div className="app"><style>{`
   {editFiles.map((f,i)=><div key={i} className="file-item"><span className="file-icon">{f.type==="application/pdf"?"📄":"📝"}</span><span className="file-name">{f.name}</span><button className="file-rm" onClick={()=>removeFile(i,setEditFiles)}>×</button></div>)}
 </div>}
 <button className="ego" onClick={doEdit} disabled={editing||!edit}>{editing?"⏳":"🔄 Appliquer"}</button>
-{cur?.sources?.length>0&&<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #2a3550"}}><div style={{fontSize:11,fontWeight:600,color:"#8899b5",marginBottom:3}}>🔗 Sources</div>{cur.sources.map((s,i)=><a key={i} href={s} target="_blank" rel="noopener noreferrer" style={{display:"block",fontSize:8,color:"#93c5fd",marginBottom:1,wordBreak:"break-all",textDecoration:"none"}}>[{i+1}] {s.length>45?s.substring(0,45)+"...":s}</a>)}</div>}
+{cur?.sources?.length>0&&<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #2a3550"}}><div style={{fontSize:11,fontWeight:600,color:"#8899b5",marginBottom:3}}>🔗 Sources <span style={{fontWeight:400,fontSize:8,color:"#5a6a85"}}>(survole une source → ses citations s'allument dans le cours)</span></div>{cur.sources.map((s,i)=><a key={i} href={s} target="_blank" rel="noopener noreferrer" onMouseEnter={()=>setHovSrc(i+1)} onMouseLeave={()=>setHovSrc(null)} style={{display:"block",fontSize:8,color:hovSrc===i+1?"#fdba74":"#93c5fd",background:hovSrc===i+1?"#f9731620":"transparent",borderRadius:4,padding:"2px 4px",marginBottom:1,wordBreak:"break-all",textDecoration:"none"}}>[{i+1}] {s.length>45?s.substring(0,45)+"...":s}</a>)}</div>}
 </div>
 </div>
 </>}
