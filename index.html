@@ -252,6 +252,60 @@ async function processFile(file) {
   }
 }
 
+// ── Export : analyse du cours en blocs + générateurs HTML / PPTX / PDF ──
+function stripMd(s){return (s||"").replace(/\*\*(.*?)\*\*/g,"$1").replace(/\s*\[(\d+)\]/g,"").trim();}
+function inlineHTML(s){
+  let h=(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  h=h.replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>");
+  h=h.replace(/\[(\d+)\]/g,'<sup class="cit">[$1]</sup>');
+  return h;
+}
+function parseBlocks(md){
+  const lines=(md||"").split("\n"); const out=[]; let tb=[];
+  const flush=()=>{ if(!tb.length)return; const rows=tb.map(l=>l.split("|").map(c=>c.trim()).filter(Boolean)).filter(r=>r.length); const body=rows.filter(r=>!r.every(c=>/^[-:]+$/.test(c))); if(body.length)out.push({t:"table",head:body[0],rows:body.slice(1)}); tb=[]; };
+  lines.forEach(l=>{
+    const s=l.trim();
+    if(s.indexOf("|")===0){tb.push(s);return;}
+    flush();
+    if(!s)return;
+    if(s.indexOf("# ")===0)out.push({t:"h1",x:s.slice(2)});
+    else if(s.indexOf("## ")===0)out.push({t:"h2",x:s.slice(3)});
+    else if(s.indexOf("### ")===0)out.push({t:"h3",x:s.slice(4)});
+    else if(s.indexOf("#### ")===0)out.push({t:"h4",x:s.slice(5)});
+    else if(/^\[SCH[ÉE]MA/i.test(s))out.push({t:"schema",x:s.replace(/^\[SCH[ÉE]MA[:\s]*/i,"").replace(/\]$/,"")});
+    else if(/^\[ORGANIGRAMME/i.test(s))out.push({t:"schema",x:s.replace(/^\[ORGANIGRAMME[:\s]*/i,"").replace(/\]$/,"")});
+    else if(s.indexOf("> ")===0)out.push({t:"quote",x:s.slice(2)});
+    else if(/^[-*]\s/.test(s))out.push({t:"li",x:s.replace(/^[-*]\s/,"")});
+    else if(/^\d+\.\s/.test(s))out.push({t:"li",x:s.replace(/^\d+\.\s/,"")});
+    else if(s.indexOf("---")===0)out.push({t:"hr"});
+    else out.push({t:"p",x:s});
+  });
+  flush();
+  return out;
+}
+function buildDocHTML(course,meta){
+  const blocks=parseBlocks(course.content); let body=""; let inList=false;
+  const closeList=()=>{if(inList){body+="</ul>";inList=false;}};
+  blocks.forEach(b=>{
+    if(b.t!=="li")closeList();
+    if(b.t==="h1")body+='<h1 class="d-h1">'+inlineHTML(stripMd(b.x))+"</h1>";
+    else if(b.t==="h2")body+='<h2 class="d-h2">'+inlineHTML(stripMd(b.x))+"</h2>";
+    else if(b.t==="h3")body+='<h3 class="d-h3">'+inlineHTML(stripMd(b.x))+"</h3>";
+    else if(b.t==="h4")body+='<h4 class="d-h4">'+inlineHTML(stripMd(b.x))+"</h4>";
+    else if(b.t==="li"){if(!inList){body+='<ul class="d-ul">';inList=true;}body+="<li>"+inlineHTML(b.x)+"</li>";}
+    else if(b.t==="quote")body+='<div class="d-quote">'+inlineHTML(b.x)+"</div>";
+    else if(b.t==="schema")body+='<div class="d-schema">📊 '+inlineHTML(stripMd(b.x))+"</div>";
+    else if(b.t==="hr")body+='<hr class="d-hr"/>';
+    else if(b.t==="table"){let t='<table class="d-table"><thead><tr>'+b.head.map(h=>"<th>"+inlineHTML(stripMd(h))+"</th>").join("")+"</tr></thead><tbody>";b.rows.forEach(r=>{t+="<tr>"+r.map(c=>"<td>"+inlineHTML(c)+"</td>").join("")+"</tr>";});t+="</tbody></table>";body+=t;}
+    else body+='<p class="d-p">'+inlineHTML(b.x)+"</p>";
+  });
+  closeList();
+  return '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+stripMd(meta.title)+'</title><style>@page{size:A4;margin:18mm 16mm}*{box-sizing:border-box}body{font-family:Georgia,"Times New Roman",serif;color:#1f2937;line-height:1.55;margin:0;font-size:12.5pt}.d-head{border-bottom:3px solid #f97316;padding-bottom:10px;margin-bottom:18px}.d-head .t{font-family:Arial,sans-serif;font-size:24pt;font-weight:800;color:#1e3a8a;margin:0}.d-head .s{font-family:Arial,sans-serif;font-size:11pt;color:#64748b;margin-top:4px}.d-h1{font-family:Arial,sans-serif;font-size:19pt;color:#1e3a8a;border-bottom:2px solid #1e3a8a33;padding-bottom:4px;margin:18px 0 8px}.d-h2{font-family:Arial,sans-serif;font-size:15pt;color:#1e3a8a;margin:16px 0 6px;border-left:4px solid #f97316;padding-left:8px}.d-h3{font-family:Arial,sans-serif;font-size:12.5pt;color:#0f766e;margin:12px 0 4px}.d-h4{font-family:Arial,sans-serif;font-size:11.5pt;color:#7c3aed;margin:10px 0 3px}.d-p{margin:5px 0}.d-ul{margin:5px 0 5px 4px;padding-left:20px}.d-ul li{margin:2px 0}.d-quote{background:#fff7ed;border-left:4px solid #f97316;padding:8px 12px;margin:8px 0;font-style:italic;color:#7c2d12}.d-schema{background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 12px;margin:8px 0;font-family:Arial,sans-serif;font-size:10.5pt;color:#1e40af}.d-table{width:100%;border-collapse:collapse;margin:10px 0;font-family:Arial,sans-serif;font-size:10.5pt}.d-table th{background:#1e3a8a;color:#fff;text-align:left;padding:7px 9px}.d-table td{border:1px solid #e5e7eb;padding:6px 9px}.d-table tr:nth-child(even) td{background:#f8fafc}.d-hr{border:none;border-top:1px solid #e5e7eb;margin:14px 0}.cit{color:#2563eb;font-size:.72em}.d-foot{margin-top:24px;border-top:1px solid #e5e7eb;padding-top:8px;font-family:Arial,sans-serif;font-size:9pt;color:#94a3b8;text-align:center}@media screen{body{max-width:820px;margin:24px auto;padding:0 20px}}</style></head><body><div class="d-head"><p class="t">'+inlineHTML(stripMd(meta.title))+'</p><p class="s">'+(meta.sub?inlineHTML(meta.sub)+" — ":"")+'UFR STAPS Bourgogne · Ophélie CUYNET</p></div>'+body+'<div class="d-foot">STAPS Course Studio · WE-FORM · Ophélie CUYNET</div></body></html>';
+}
+function loadScript(src){return new Promise((res,rej)=>{if([].slice.call(document.scripts).some(s=>s.src===src)){res();return;}const sc=document.createElement("script");sc.src=src;sc.onload=()=>res();sc.onerror=()=>rej(new Error("load"));document.head.appendChild(sc);});}
+function dl(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),4000);}
+function safeName(t){return ("Cours_"+(t||"STAPS")).replace(/[^\w\-]+/g,"_").slice(0,40);}
+
 function App(){
 const[pg,setPg]=useState("home");
 const[semK,setSemK]=useState(null);
@@ -545,8 +599,9 @@ function exportPostMessage(){
 function exportURL(){
   const data=buildExportJSON();
   const encoded=encodeURIComponent(btoa(unescape(encodeURIComponent(data))));
-  const url=`?cours=${encoded}`;
-  navigator.clipboard.writeText(window.location.origin+window.location.pathname+url);
+  const full=window.location.origin+window.location.pathname+`?cours=${encoded}`;
+  if(full.length>7500){alert("⚠️ Ce cours est trop volumineux pour un lien URL (limite des navigateurs/serveurs → erreur « URI_TOO_LONG »).\n\nUtilise plutôt l'export 🌐 HTML, 📄 PDF, 📊 PPT ou 📤 JSON.");return;}
+  navigator.clipboard.writeText(full);
   alert("✅ URL copiée dans le presse-papiers !");
 }
 
@@ -556,6 +611,70 @@ function exportMD(){
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
   a.href=url;a.download=`cours_${cp.theme.replace(/\s+/g,'_').substring(0,30)}.md`;a.click();
+}
+function docMeta(){const c=courses[activeC]||{};return {title:cp.theme||c.ue||"Cours STAPS", sub:[DB[semK]?.f,c.semL,c.ue].filter(Boolean).join(" · ")};}
+function exportHTML(){
+  const c=courses[activeC]; if(!c)return;
+  dl(new Blob([buildDocHTML(c,docMeta())],{type:"text/html;charset=utf-8"}), safeName(cp.theme)+".html");
+}
+function exportPDF(){
+  const c=courses[activeC]; if(!c)return;
+  const w=window.open("","_blank");
+  if(!w){alert("Autorise les pop-ups pour générer le PDF, puis choisis « Enregistrer en PDF » dans la fenêtre d'impression.");return;}
+  w.document.open();
+  w.document.write(buildDocHTML(c,docMeta())+'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},350);}</scr'+'ipt>');
+  w.document.close();
+}
+async function exportPPTX(){
+  const c=courses[activeC]; if(!c)return;
+  setBusy(true);setStep("📊 Génération du PowerPoint…");
+  try{
+    await loadScript("https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js");
+    const P=window.PptxGenJS; if(!P)throw new Error("lib");
+    const pptx=new P(); pptx.layout="LAYOUT_WIDE";
+    const NAVY="1E3A8A",ORANGE="F97316",GREY="64748B",DARK="0F1B33";
+    const meta=docMeta();
+    // Diapo de titre
+    let s=pptx.addSlide(); s.background={color:DARK};
+    s.addShape(pptx.ShapeType.rect,{x:0,y:3.05,w:13.33,h:0.08,fill:{color:ORANGE}});
+    s.addText(meta.title,{x:0.6,y:1.5,w:12.1,h:1.5,fontSize:34,bold:true,color:"FFFFFF",fontFace:"Arial"});
+    if(meta.sub)s.addText(meta.sub,{x:0.6,y:3.25,w:12.1,h:0.6,fontSize:14,color:"BFD0E8",fontFace:"Arial"});
+    s.addText("UFR STAPS Bourgogne · Ophélie CUYNET",{x:0.6,y:6.7,w:12.1,h:0.4,fontSize:11,color:"8AA0C0",fontFace:"Arial"});
+    // Sections (par titre ##)
+    const blocks=parseBlocks(c.content); const sections=[]; let sec=null;
+    blocks.forEach(b=>{
+      if(b.t==="h1")return;
+      if(b.t==="h2"){sec={title:stripMd(b.x),items:[],tables:[]};sections.push(sec);return;}
+      if(!sec){sec={title:meta.title,items:[],tables:[]};sections.push(sec);}
+      if(b.t==="table")sec.tables.push(b);
+      else if(b.t==="h3"||b.t==="h4")sec.items.push({txt:stripMd(b.x),sub:true});
+      else if(b.t==="schema")sec.items.push({txt:"➜ "+stripMd(b.x),dim:true});
+      else if(b.t==="quote")sec.items.push({txt:"💡 "+stripMd(b.x),quote:true});
+      else if(b.t==="li")sec.items.push({txt:stripMd(b.x),bullet:true});
+      else if(b.t==="p")sec.items.push({txt:stripMd(b.x)});
+    });
+    const head=(sl,title)=>{sl.background={color:"FFFFFF"};sl.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.33,h:1.0,fill:{color:NAVY}});sl.addShape(pptx.ShapeType.rect,{x:0,y:1.0,w:13.33,h:0.06,fill:{color:ORANGE}});sl.addText(title,{x:0.5,y:0.12,w:12.3,h:0.76,fontSize:22,bold:true,color:"FFFFFF",valign:"middle",fontFace:"Arial"});sl.addText("WE-FORM · STAPS Course Studio",{x:0.5,y:7.05,w:12.3,h:0.3,fontSize:9,color:"94A3B8",align:"right",fontFace:"Arial"});};
+    sections.forEach(sec=>{
+      const chunks=[]; for(let i=0;i<sec.items.length;i+=9)chunks.push(sec.items.slice(i,i+9));
+      if(!chunks.length)chunks.push([]);
+      chunks.forEach((ch,ci)=>{
+        const sl=pptx.addSlide(); head(sl,sec.title+(ci>0?" (suite)":""));
+        if(ch.length)sl.addText(ch.map(it=>({text:it.txt,options:{bullet:it.bullet?{indent:14}:false,fontSize:it.sub?16:13,bold:!!it.sub,italic:!!it.quote,color:it.sub?NAVY:(it.dim?GREY:"1F2937"),paraSpaceAfter:6}})),{x:0.6,y:1.3,w:12.1,h:5.6,valign:"top",fontFace:"Arial"});
+      });
+      sec.tables.forEach(tb=>{
+        const sl=pptx.addSlide(); head(sl,sec.title+" — tableau");
+        const rows=[tb.head.map(h=>({text:stripMd(h),options:{bold:true,color:"FFFFFF",fill:{color:NAVY},fontSize:12}}))];
+        tb.rows.forEach((r,ri)=>rows.push(r.map(cc=>({text:stripMd(cc),options:{fontSize:11,color:"1F2937",fill:{color:ri%2?"F1F5F9":"FFFFFF"}}}))));
+        sl.addTable(rows,{x:0.5,y:1.35,w:12.3,border:{type:"solid",color:"D1D5DB",pt:0.5},autoPage:true,valign:"middle"});
+      });
+    });
+    const blob=await Promise.race([
+      pptx.write({outputType:"blob"}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error("délai dépassé")),35000))
+    ]);
+    dl(blob, safeName(cp.theme)+".pptx");
+  }catch(e){alert("⚠️ Le PowerPoint n'a pas pu être généré ("+e.message+").\n\nEn attendant, les exports 🌐 HTML et 📄 PDF fonctionnent parfaitement. Si le souci persiste, dis-le moi.");}
+  setBusy(false);setStep("");
 }
 
 // ── SVG generators ──
@@ -1219,6 +1338,9 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f9731580}
 <div style={{display:"flex",gap:6,fontSize:10,color:"#8899b5",marginTop:2,flexWrap:"wrap"}}>{cur?.semL&&<span>📚 {cur.semL}</span>}{cur?.ue&&<span>📝 {cur.ue}</span>}</div></div>
 <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
 {undoStk.length>0&&<button className="ab" style={{color:"#fdba74",borderColor:"#f9731640"}} onClick={doUndo}>↩️ Annuler</button>}
+<button className="ab" style={{color:"#fdba74",borderColor:"#f9731640",fontWeight:600}} onClick={exportHTML}>🌐 HTML</button>
+<button className="ab" style={{color:"#fca5a5",borderColor:"#ef444440",fontWeight:600}} onClick={exportPDF}>📄 PDF</button>
+<button className="ab" style={{color:"#fdba74",borderColor:"#f9731640",fontWeight:600}} onClick={exportPPTX} disabled={busy}>📊 PowerPoint</button>
 <button className="ab" onClick={exportMD}>💾 .md</button>
 <button className="ab" onClick={exportJSON}>📤 JSON</button>
 <button className="ab" onClick={exportPostMessage}>📡 postMessage</button>
