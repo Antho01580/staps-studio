@@ -463,7 +463,7 @@ async function sourceAll(){
   if(!CK){alert("⚙️ Configure d'abord ta clé API Claude (bouton ⚙️ Clés API).");setShowKeys(true);return;}
   const c=courses[activeC]; if(!c)return;
   let srcs=c.sources||[];
-  setSrcBusy("🔗 Sourçage…");
+  setSrcBusy("🔗 Préparation…");
   try{
     if((!srcs||!srcs.length) && PK){
       setSrcBusy("🔍 Recherche de sources…");
@@ -474,18 +474,28 @@ async function sourceAll(){
       alert("Aucune source disponible à attribuer.\n\nActive la recherche en configurant ta clé Perplexity (⚙️ Clés API), ou régénère le cours avec Perplexity activé.");
       setSrcBusy("");return;
     }
-    setSrcBusy("🔗 Attribution à chaque partie…");
     const srcList=srcs.map((s,i)=>`[${i+1}] ${s}`).join("\n");
-    const r=await cl(
-      `Tu es expert STAPS. On te donne un COURS et une liste de SOURCES numérotées. TÂCHE : sourcer PRESQUE TOUTES les parties du cours. Ajoute une citation [N] à la fin de PRESQUE chaque paragraphe, chaque point de liste, et chaque ligne/cellule de tableau pertinente, en choisissant le ou les numéros de source les plus pertinents (réutilise la même source plusieurs fois si besoin, combine [N][M] si plusieurs s'appliquent). OBJECTIF : qu'en survolant toutes les sources, la quasi-totalité du cours soit couverte. NE CHANGE RIEN d'autre : ni le texte, ni la structure, ni les balises ([SCHÉMA: ...], [ORGANIGRAMME: ...], titres #, tableaux |..|). Conserve les [N] déjà présents. Renvoie le COURS COMPLET, sans aucun commentaire.`,
-      `SOURCES :\n${srcList}\n\nCOURS :\n${c.content}\n\nRenvoie le cours complet avec les citations [N] ajoutées partout où c'est pertinent.`,
-      []
-    );
-    if(r && !/^Erreur/i.test(r)){
-      pushUndo(c.content);
-      setCourses(cc=>{const nc=[...cc];nc[activeC]={...nc[activeC],content:r,sources:srcs};return nc;});
-    } else alert("Échec du sourçage : "+(r||"erreur"));
-  }catch(e){alert("Erreur : "+e.message);}
+    // Découpe le cours par sections (## ) pour sourcer vite, par morceaux, sans tronquer ni bloquer
+    const lines=c.content.split("\n"); const parts=[]; let curL=[];
+    lines.forEach(l=>{ if(/^##\s/.test(l) && curL.length){parts.push(curL.join("\n"));curL=[l];} else curL.push(l); });
+    if(curL.length)parts.push(curL.join("\n"));
+    const sys=`Tu es expert STAPS. On te donne une liste de SOURCES numérotées et un EXTRAIT de cours. Ajoute une citation [N] à la fin de PRESQUE chaque paragraphe, point de liste et ligne de tableau de cet extrait, avec le(s) numéro(s) de source les plus pertinents (réutilise/combine [N][M] si utile). NE CHANGE RIEN d'autre : ni le texte, ni les titres, ni les balises ([SCHÉMA: ...], tableaux |..|). Garde les [N] déjà présents. Renvoie UNIQUEMENT l'extrait modifié, sans commentaire.`;
+    const out=[];
+    for(let i=0;i<parts.length;i++){
+      setSrcBusy(`🔗 Sourçage ${i+1}/${parts.length}…`);
+      let r;
+      try{
+        r=await Promise.race([
+          cl(sys,`SOURCES :\n${srcList}\n\nEXTRAIT :\n${parts[i]}\n\nRenvoie l'extrait avec les [N] ajoutés.`,[]),
+          new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),60000))
+        ]);
+      }catch(e){ r=null; }
+      out.push((r && !/^Erreur/i.test(r)) ? r.trim() : parts[i]); // en cas d'échec on garde l'original
+    }
+    pushUndo(c.content);
+    const merged=out.join("\n\n");
+    setCourses(cc=>{const nc=[...cc];nc[activeC]={...nc[activeC],content:merged,sources:srcs};return nc;});
+  }catch(e){alert("Sourçage interrompu : "+e.message);}
   setSrcBusy("");
 }
 function closeVid(){setVidOpen(false);setVidPlaying(false);try{window.speechSynthesis&&window.speechSynthesis.cancel();}catch(e){}}
