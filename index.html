@@ -772,34 +772,32 @@ async function exportPPTX(){
     s.addText(meta.title,{x:0.6,y:1.5,w:12.1,h:1.5,fontSize:34,bold:true,color:"FFFFFF",fontFace:"Arial"});
     if(meta.sub)s.addText(meta.sub,{x:0.6,y:3.25,w:12.1,h:0.6,fontSize:14,color:"BFD0E8",fontFace:"Arial"});
     s.addText("UFR STAPS Bourgogne · Ophélie CUYNET",{x:0.6,y:6.7,w:12.1,h:0.4,fontSize:11,color:"8AA0C0",fontFace:"Arial"});
-    // Sections (par titre ##)
+    // Sections (par titre ##) — éléments ordonnés : texte / schéma / tableau
+    const SCOLS=["F97316","3B82F6","22C55E","A855F7","EC4899","EAB308","14B8A6"];
+    const head=(sl,title)=>{sl.background={color:"FFFFFF"};sl.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.33,h:1.0,fill:{color:NAVY}});sl.addShape(pptx.ShapeType.rect,{x:0,y:1.0,w:13.33,h:0.06,fill:{color:ORANGE}});sl.addText(title,{x:0.5,y:0.12,w:12.3,h:0.76,fontSize:22,bold:true,color:"FFFFFF",valign:"middle",fontFace:"Arial"});sl.addText("WE-FORM · STAPS Course Studio",{x:0.5,y:7.05,w:12.3,h:0.3,fontSize:9,color:"94A3B8",align:"right",fontFace:"Arial"});};
+    const flow=(sl,steps,y,h)=>{const n=Math.min(steps.length,6);if(!n)return;const gap=0.32,total=12.2,bw=(total-(n-1)*gap)/n,x0=(13.33-total)/2;for(let i=0;i<n;i++){const x=x0+i*(bw+gap);sl.addShape(pptx.ShapeType.roundRect,{x:x,y:y,w:bw,h:h,fill:{color:SCOLS[i%SCOLS.length]},rectRadius:0.1});sl.addText((steps[i]||"").slice(0,70),{x:x+0.06,y:y,w:bw-0.12,h:h,align:"center",valign:"middle",fontSize:13,bold:true,color:"FFFFFF",fontFace:"Arial"});if(i<n-1)sl.addText("➜",{x:x+bw-gap*0.5,y:y,w:gap,h:h,align:"center",valign:"middle",fontSize:20,bold:true,color:"94A3B8",fontFace:"Arial"});}};
+    const txtSlide=(title,buf)=>{const sl=pptx.addSlide();head(sl,title);sl.addText(buf.map(it=>({text:(it.txt||"").slice(0,420),options:{breakLine:true,bullet:!!it.bullet,fontSize:it.sub?17:14,bold:!!it.sub,italic:!!it.quote,color:it.sub?NAVY:(it.quote?"7C2D12":"1F2937"),paraSpaceAfter:it.sub?6:13,paraSpaceBefore:it.sub?9:0}})),{x:0.6,y:1.3,w:12.13,h:5.55,valign:"middle",fontFace:"Arial",fit:"shrink"});};
     const blocks=parseBlocks(c.content); const sections=[]; let sec=null;
     blocks.forEach(b=>{
       if(b.t==="h1")return;
-      if(b.t==="h2"){sec={title:stripMd(b.x),items:[],tables:[]};sections.push(sec);return;}
-      if(!sec){sec={title:meta.title,items:[],tables:[]};sections.push(sec);}
-      if(b.t==="table")sec.tables.push(b);
-      else if(b.t==="h3"||b.t==="h4")sec.items.push({txt:stripMd(b.x),sub:true});
-      else if(b.t==="schema")sec.items.push({txt:"➜ "+stripMd(b.x),dim:true});
-      else if(b.t==="quote")sec.items.push({txt:stripMd(b.x),quote:true});
-      else if(b.t==="li")sec.items.push({txt:stripMd(b.x),bullet:true});
-      else if(b.t==="p")sec.items.push({txt:stripMd(b.x)});
+      if(b.t==="h2"){sec={title:stripMd(b.x),els:[]};sections.push(sec);return;}
+      if(!sec){sec={title:meta.title,els:[]};sections.push(sec);}
+      if(b.t==="table")sec.els.push({k:"table",tb:b});
+      else if(b.t==="schema")sec.els.push({k:"schema",steps:parseSchemaItems(b.x)});
+      else if(b.t==="h3"||b.t==="h4")sec.els.push({k:"txt",txt:stripMd(b.x),sub:true});
+      else if(b.t==="quote")sec.els.push({k:"txt",txt:stripMd(b.x),quote:true});
+      else if(b.t==="li")sec.els.push({k:"txt",txt:stripMd(b.x),bullet:true});
+      else if(b.t==="p")sec.els.push({k:"txt",txt:stripMd(b.x)});
     });
-    const head=(sl,title)=>{sl.background={color:"FFFFFF"};sl.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.33,h:1.0,fill:{color:NAVY}});sl.addShape(pptx.ShapeType.rect,{x:0,y:1.0,w:13.33,h:0.06,fill:{color:ORANGE}});sl.addText(title,{x:0.5,y:0.12,w:12.3,h:0.76,fontSize:22,bold:true,color:"FFFFFF",valign:"middle",fontFace:"Arial"});sl.addText("WE-FORM · STAPS Course Studio",{x:0.5,y:7.05,w:12.3,h:0.3,fontSize:9,color:"94A3B8",align:"right",fontFace:"Arial"});};
     sections.forEach(sec=>{
-      const chunks=[]; let cur=[],ln=0;
-      sec.items.forEach(it=>{const L=(it.txt||"").length+14;if(cur.length&&(ln+L>540||cur.length>=7)){chunks.push(cur);cur=[];ln=0;}cur.push(it);ln+=L;});
-      if(cur.length)chunks.push(cur); if(!chunks.length)chunks.push([]);
-      chunks.forEach((ch,ci)=>{
-        const sl=pptx.addSlide(); head(sl,sec.title+(ci>0?" (suite)":""));
-        if(ch.length)sl.addText(ch.map(it=>({text:(it.txt||"").slice(0,400),options:{breakLine:true,bullet:!!it.bullet,fontSize:it.sub?15:12.5,bold:!!it.sub,italic:!!it.quote,color:it.sub?NAVY:(it.quote?"7C2D12":(it.dim?GREY:"1F2937")),paraSpaceAfter:it.sub?4:9,paraSpaceBefore:it.sub?7:0}})),{x:0.55,y:1.28,w:12.25,h:5.55,valign:"top",fontFace:"Arial",fit:"shrink"});
+      let buf=[],blen=0,part=0;
+      const flush=()=>{if(!buf.length)return;part++;txtSlide(sec.title+(part>1?" ("+part+")":""),buf);buf=[];blen=0;};
+      sec.els.forEach(el=>{
+        if(el.k==="txt"){const L=(el.txt||"").length+16;if(buf.length&&(blen+L>620||buf.length>=6))flush();buf.push(el);blen+=L;}
+        else if(el.k==="schema"){flush();const sl=pptx.addSlide();head(sl,sec.title);flow(sl,el.steps,2.9,1.4);sl.addText(el.steps.join("   →   "),{x:0.6,y:4.9,w:12.13,h:1.3,align:"center",valign:"top",fontSize:13,italic:true,color:GREY,fontFace:"Arial"});}
+        else if(el.k==="table"){flush();const tb=el.tb;const sl=pptx.addSlide();head(sl,sec.title);const rows=[tb.head.map(h=>({text:stripMd(h),options:{bold:true,color:"FFFFFF",fill:{color:NAVY},fontSize:13}}))];tb.rows.forEach((r,ri)=>rows.push(r.map(cc=>({text:stripMd(cc),options:{fontSize:12,color:"1F2937",fill:{color:ri%2?"F1F5F9":"FFFFFF"}}}))));const rh=Math.min(0.85,Math.max(0.4,5.3/rows.length));sl.addTable(rows,{x:0.6,y:1.35,w:12.13,rowH:rh,border:{type:"solid",color:"D1D5DB",pt:0.5},autoPage:true,valign:"middle"});}
       });
-      sec.tables.forEach(tb=>{
-        const sl=pptx.addSlide(); head(sl,sec.title+" — tableau");
-        const rows=[tb.head.map(h=>({text:stripMd(h),options:{bold:true,color:"FFFFFF",fill:{color:NAVY},fontSize:12}}))];
-        tb.rows.forEach((r,ri)=>rows.push(r.map(cc=>({text:stripMd(cc),options:{fontSize:11,color:"1F2937",fill:{color:ri%2?"F1F5F9":"FFFFFF"}}}))));
-        sl.addTable(rows,{x:0.5,y:1.35,w:12.3,border:{type:"solid",color:"D1D5DB",pt:0.5},autoPage:true,valign:"middle"});
-      });
+      flush();
     });
     const blob=await Promise.race([
       pptx.write({outputType:"blob"}),
