@@ -27,7 +27,8 @@ const { useState, useEffect, useRef } = React;
    Renseignées une fois via le bouton ⚙️ Clés API dans l'app. Elles ne quittent pas ce navigateur. */
 let CK = localStorage.getItem("staps_ck") || "";   // Clé Anthropic (Claude)
 let PK = localStorage.getItem("staps_pk") || "";   // Clé Perplexity (optionnelle)
-const MODEL = "claude-sonnet-4-6";                  // modèle Claude actuel (l'ancien claude-sonnet-4-20250514 est retiré)
+const MODEL = "claude-sonnet-4-6";                  // qualité : génération de cours, modifs, PowerPoint
+const MODEL_FAST = "claude-haiku-4-5";              // économique (~3× moins cher) : tâches mécaniques/secondaires
 
 /* ─── Estimation du coût des appels API (tokens réels × tarifs publics → €) ─── */
 const PRICE={ci:3, co:15, pi:3, po:15};   // $ / million de tokens (Claude Sonnet 4.6 ; Perplexity sonar-pro ≈)
@@ -35,7 +36,7 @@ const USD_TO_EUR=0.92;
 const COST={usd:0,ci:0,co:0,pi:0,po:0,calls:0,_subs:[]};
 try{const sv=JSON.parse(localStorage.getItem("staps_cost")||"null");if(sv)Object.assign(COST,sv,{_subs:[]});}catch(e){}
 function costNotify(){try{localStorage.setItem("staps_cost",JSON.stringify({usd:COST.usd,ci:COST.ci,co:COST.co,pi:COST.pi,po:COST.po,calls:COST.calls}));}catch(e){}COST._subs.forEach(f=>{try{f();}catch(e){}});}
-function addClaudeUsage(u){if(!u)return;const i=u.input_tokens||0,o=u.output_tokens||0;COST.ci+=i;COST.co+=o;COST.usd+=i/1e6*PRICE.ci+o/1e6*PRICE.co;COST.calls++;costNotify();}
+function addClaudeUsage(u,model){if(!u)return;const i=u.input_tokens||0,o=u.output_tokens||0;const haiku=(model||"").indexOf("haiku")>-1;const ci=haiku?1:PRICE.ci,co=haiku?5:PRICE.co;COST.ci+=i;COST.co+=o;COST.usd+=i/1e6*ci+o/1e6*co;COST.calls++;costNotify();}
 function addPplxUsage(u){if(!u)return;const i=u.prompt_tokens||0,o=u.completion_tokens||0;COST.pi+=i;COST.po+=o;COST.usd+=i/1e6*PRICE.pi+o/1e6*PRICE.po+0.006;COST.calls++;costNotify();}
 function costEUR(){return COST.usd*USD_TO_EUR;}
 function resetCost(){COST.usd=0;COST.ci=0;COST.co=0;COST.pi=0;COST.po=0;COST.calls=0;costNotify();}
@@ -207,8 +208,9 @@ const SP=["Football","Rugby","Basketball","Handball","Volleyball","Tennis","Athl
 const CT=[{id:"cm",n:"CM",i:"🎓"},{id:"td",n:"TD",i:"📝"},{id:"tp",n:"TP",i:"🏃"},{id:"cas",n:"Cas Pratique",i:"🧩"},{id:"groupe",n:"Groupe",i:"👥"},{id:"eval",n:"Évaluation",i:"✅"},{id:"seance",n:"Séance Sport",i:"⚡"},{id:"hybride",n:"Hybride",i:"🔄"}];
 const OO=[{id:"schemas",n:"Schémas"},{id:"organigrammes",n:"Organigrammes"},{id:"tableaux",n:"Tableaux"},{id:"cas_concrets",n:"Cas concrets"},{id:"exercices",n:"Exercices"},{id:"quiz",n:"Quiz/QCM"},{id:"bibliographie",n:"Bibliographie"},{id:"fiches",n:"Fiches synthèse"}];
 
-async function ppx(p){try{const r=await fetch("https://api.perplexity.ai/chat/completions",{method:"POST",headers:{"Authorization":`Bearer ${PK}`,"Content-Type":"application/json"},body:JSON.stringify({model:"sonar-pro",messages:[{role:"system",content:"Expert STAPS, pédagogie universitaire, formation sportive France. Toujours sourcé."},{role:"user",content:p}],max_tokens:4000,temperature:.3,return_citations:true})});const d=await r.json();addPplxUsage(d.usage);return{c:d.choices?.[0]?.message?.content||"",s:d.citations||[]};}catch(e){return{c:"",s:[]};}}
-async function cl(s, u, files=[]){
+async function ppx(p){try{const r=await fetch("https://api.perplexity.ai/chat/completions",{method:"POST",headers:{"Authorization":`Bearer ${PK}`,"Content-Type":"application/json"},body:JSON.stringify({model:"sonar-pro",messages:[{role:"system",content:"Expert STAPS, pédagogie universitaire, formation sportive France. Toujours sourcé."},{role:"user",content:p}],max_tokens:2500,temperature:.3,return_citations:true})});const d=await r.json();addPplxUsage(d.usage);return{c:d.choices?.[0]?.message?.content||"",s:d.citations||[]};}catch(e){return{c:"",s:[]};}}
+async function cl(s, u, files=[], model){
+  const mdl=model||MODEL;
   try {
     // Build multimodal content: text + attached files (PDF/images)
     const content = [];
@@ -228,10 +230,10 @@ async function cl(s, u, files=[]){
     const r = await fetch("https://api.anthropic.com/v1/messages",{
       method:"POST",
       headers:{"Content-Type":"application/json","x-api-key":CK,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:MODEL,max_tokens:8000,system:s,messages:[{role:"user",content: files.length > 0 ? content : u}]})
+      body:JSON.stringify({model:mdl,max_tokens:8000,system:s,messages:[{role:"user",content: files.length > 0 ? content : u}]})
     });
     const d = await r.json();
-    addClaudeUsage(d.usage);
+    addClaudeUsage(d.usage,mdl);
     return d.content?.[0]?.text || d.error?.message || "Erreur";
   } catch(e){return "Erreur: "+e.message;}
 }
@@ -541,7 +543,7 @@ async function sourceAll(){
       let r;
       try{
         r=await Promise.race([
-          cl(sys,`SOURCES :\n${srcList}\n\nEXTRAIT :\n${parts[i]}\n\nRenvoie l'extrait avec les [N] ajoutés.`,[]),
+          cl(sys,`SOURCES :\n${srcList}\n\nEXTRAIT :\n${parts[i]}\n\nRenvoie l'extrait avec les [N] ajoutés.`,[],MODEL_FAST),
           new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),60000))
         ]);
       }catch(e){ r=null; }
@@ -569,7 +571,7 @@ async function genRecap(){
 ]}
 Règles : 7 à 11 scènes, points TRÈS courts (max ~9 mots), 'motcle' optionnel, 'schema' avec des → uniquement quand pertinent, narration naturelle en français. JSON pur uniquement.`,
       `COURS :\n${c.content}`,
-      []
+      [],MODEL_FAST
     );
     let t=(r||"").trim(); const a=t.indexOf("{"),b=t.lastIndexOf("}");
     if(a>-1&&b>a)t=t.slice(a,b+1);
@@ -666,7 +668,7 @@ async function selExplain(){
     const r=await cl(
       "Expert STAPS pédagogue. Explique de façon claire, pédagogique et sourcée le passage demandé, dans le contexte du cours. Réponds en quelques phrases.",
       `CONTEXTE (cours) :\n${courses[activeC]?.content||""}\n\nPASSAGE :\n"""${selText}"""\n\nExplique ce passage : ce que ça signifie, d'où vient l'information, et pourquoi c'est présent dans le cours.`,
-      []
+      [],MODEL_FAST
     );
     setSelAns({kind:"info",text:r});
   }catch(e){setSelAns({kind:"err",text:e.message});}
