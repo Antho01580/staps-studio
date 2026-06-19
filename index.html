@@ -270,6 +270,7 @@ async function processFile(file) {
 
 // ── Export : analyse du cours en blocs + générateurs HTML / PPTX / PDF ──
 function stripMd(s){return (s||"").replace(/\[([^\]]+)\]\([^)]*\)/g,"$1").replace(/\*\*(.*?)\*\*/g,"$1").replace(/\*(.*?)\*/g,"$1").replace(/`/g,"").replace(/\s*\[(\d+)\]/g,"").replace(/\s{2,}/g," ").trim();}
+function cleanKeepBold(s){return String(s||"").replace(/\[([^\]]+)\]\([^)]*\)/g,"$1").replace(/`/g,"").replace(/\s*\[(\d+)\]/g,"").replace(/\s{2,}/g," ").trim();}
 function inlineHTML(s){
   let h=(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   h=h.replace(/\[([^\]]+)\]\(([^)]+)\)/g,"$1");
@@ -824,15 +825,20 @@ async function exportPPTX(){
     const styleNote=profile.pptStyle?("\nStyle souhaité par l'enseignante (à respecter) : "+profile.pptStyle):"";
     if(CK){ try{
     const rr=await cl(
-      `Tu mets en page un COURS STAPS en présentation PowerPoint claire, ÉQUILIBRÉE et BIEN REMPLIE. Découpe le cours en diapositives couvrant TOUT le cours, dans l'ordre. Chaque diapo de contenu = 5 à 7 puces SUBSTANTIELLES (phrases complètes et informatives, ~8 à 16 mots chacune) : regroupe les sections courtes, ne laisse JAMAIS de diapo presque vide ni surchargée.${styleNote}
+      `Tu mets en page un COURS STAPS en BELLE présentation PowerPoint, claire, ÉQUILIBRÉE et BIEN REMPLIE. Découpe le cours en diapositives couvrant TOUT le cours, dans l'ordre. VARIE les types de diapos pour que ce soit vivant et visuel.${styleNote}
 Réponds STRICTEMENT en JSON pur, sans aucun texte autour :
 {"slides":[
- {"type":"content","title":"Titre clair","bullets":["phrase informative complète","autre point concret","..."]},
- {"type":"schema","title":"Titre","steps":["Étape 1","Étape 2","Étape 3"]},
+ {"type":"content","title":"Titre clair","bullets":["phrase avec **mots-clés en gras**","autre point concret"]},
+ {"type":"schema","title":"Titre","steps":["Étape courte","Étape 2","Étape 3"]},
  {"type":"table","title":"Titre","head":["Colonne 1","Colonne 2"],"rows":[["a","b"],["c","d"]]},
  {"type":"quote","title":"À retenir","text":"message clé important"}
 ]}
-Règles : titres courts, puces complètes et autonomes (PAS de fragments), un "schema" pour les progressions/processus, garde les tableaux importants. JSON uniquement.`,
+RÈGLES DE BEAUTÉ :
+- "content" : 5 à 7 puces SUBSTANTIELLES (phrases complètes, ~8-16 mots). Mets en **gras** (doubles astérisques) les 1 à 3 mots-clés importants de CHAQUE puce.
+- "schema" : crée-en dès qu'il y a un processus, un modèle, un enchaînement ou une typologie en étapes. Étapes TRÈS COURTES (2 à 4 mots max chacune, PAS de phrases).
+- "table" : utilise-la pour TOUTE comparaison, classification ou typologie (cases courtes).
+- "quote" : pour les définitions clés ou messages à retenir.
+- Privilégie schémas et tableaux quand c'est pertinent (présentation visuelle, pas que du texte). Titres courts. JSON uniquement.`,
       `COURS :\n${c.content}`,
       []
     );
@@ -863,7 +869,7 @@ Règles : titres courts, puces complètes et autonomes (PAS de fragments), un "s
     s0.addText(meta.title,{x:0.6,y:1.75,w:12.1,h:1.6,fontSize:36,bold:true,color:"FFFFFF",fontFace:"Arial"});
     if(meta.sub)s0.addText(meta.sub,{x:0.6,y:3.45,w:12.1,h:0.6,fontSize:15,color:"BFD0E8",fontFace:"Arial"});
     const head=(sl,title)=>{sl.background={color:"FFFFFF"};sl.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.33,h:1.05,fill:{color:NAVY}});sl.addShape(pptx.ShapeType.rect,{x:0,y:1.05,w:13.33,h:0.07,fill:{color:ORANGE}});sl.addText(title,{x:0.55,y:0.12,w:12.2,h:0.82,fontSize:24,bold:true,color:"FFFFFF",valign:"middle",fontFace:"Arial"});sl.addText("WE-FORM · STAPS Course Studio",{x:0.5,y:7.08,w:12.3,h:0.3,fontSize:9,color:"94A3B8",align:"right",fontFace:"Arial"});};
-    const flow=(sl,steps)=>{const n=Math.min(steps.length,6);if(!n)return;const gap=0.34,total=12.2,bw=(total-(n-1)*gap)/n,x0=(13.33-total)/2,y=3.0,h=1.5;for(let i=0;i<n;i++){const x=x0+i*(bw+gap);sl.addShape(pptx.ShapeType.roundRect,{x:x,y:y,w:bw,h:h,fill:{color:SCOLS[i%SCOLS.length]},rectRadius:0.12});sl.addText(String(steps[i]||"").slice(0,60),{x:x+0.06,y:y,w:bw-0.12,h:h,align:"center",valign:"middle",fontSize:13,bold:true,color:"FFFFFF",fontFace:"Arial"});if(i<n-1)sl.addText("➜",{x:x+bw-gap*0.5,y:y,w:gap,h:h,align:"center",valign:"middle",fontSize:22,bold:true,color:"94A3B8",fontFace:"Arial"});}};
+    const flow=(sl,steps)=>{const n=Math.min(steps.length,6);if(!n)return;const gap=0.3,total=12.5,bw=(total-(n-1)*gap)/n,x0=(13.33-total)/2,y=2.7,h=2.05;for(let i=0;i<n;i++){const x=x0+i*(bw+gap);sl.addShape(pptx.ShapeType.roundRect,{x:x,y:y,w:bw,h:h,fill:{color:SCOLS[i%SCOLS.length]},rectRadius:0.14});sl.addText(String(steps[i]||"").slice(0,48),{x:x+0.08,y:y,w:bw-0.16,h:h,align:"center",valign:"middle",fontSize:14,bold:true,color:"FFFFFF",fontFace:"Arial"});if(i<n-1)sl.addText("➜",{x:x+bw-gap*0.5-0.06,y:y,w:gap+0.12,h:h,align:"center",valign:"middle",fontSize:24,bold:true,color:"94A3B8",fontFace:"Arial"});}};
     slides.forEach(d=>{
       const title=stripMd(d.title||meta.title);
       if(d.type==="table" && d.head && d.rows && d.rows.length){
@@ -875,15 +881,22 @@ Règles : titres courts, puces complètes et autonomes (PAS de fragments), un "s
       } else if(d.type==="schema" && d.steps && d.steps.length){
         const st=d.steps.map(x=>stripMd(String(x)));
         const sl=pptx.addSlide(); head(sl,title); flow(sl,st);
-        sl.addText(st.join("    →    "),{x:0.6,y:5.1,w:12.13,h:1.2,align:"center",valign:"top",fontSize:15,italic:true,color:GREY,fontFace:"Arial"});
       } else if(d.type==="quote" && d.text){
         const sl=pptx.addSlide(); head(sl,title);
         sl.addShape(pptx.ShapeType.rect,{x:1.0,y:2.5,w:0.16,h:2.6,fill:{color:ORANGE}});
         sl.addText("« "+stripMd(d.text)+" »",{x:1.45,y:2.3,w:10.8,h:3,valign:"middle",fontSize:26,italic:true,bold:true,color:NAVY,fontFace:"Arial"});
       } else {
-        const bl=(d.bullets||[]).map(x=>stripMd(String(x))).filter(Boolean);
+        const bl=(d.bullets||[]).map(x=>cleanKeepBold(x)).filter(Boolean);
         const sl=pptx.addSlide(); head(sl,title);
-        if(bl.length)sl.addText(bl.map(t=>({text:t,options:{bullet:{indent:20},breakLine:true,fontSize:bl.length>6?15:17,color:"1F2937",paraSpaceAfter:14}})),{x:0.75,y:1.35,w:11.9,h:5.5,valign:"middle",fontFace:"Arial",fit:"shrink"});
+        sl.addShape(pptx.ShapeType.rect,{x:0.55,y:1.4,w:0.07,h:5.35,fill:{color:ORANGE}});
+        const fs=bl.length>6?15:17, runs=[];
+        bl.forEach(b=>{
+          const raw=b.split(/\*\*(.*?)\*\*/g); const segs=[];
+          raw.forEach((p,i)=>{ if(p!=="")segs.push({t:p,bold:i%2===1}); });
+          if(!segs.length)segs.push({t:b,bold:false});
+          segs.forEach((s,j)=>runs.push({text:s.t,options:{bullet:j===0?{indent:22}:false,breakLine:j===segs.length-1,bold:s.bold,color:s.bold?NAVY:"1F2937",fontSize:fs,paraSpaceAfter:j===segs.length-1?15:0}}));
+        });
+        if(runs.length)sl.addText(runs,{x:0.88,y:1.35,w:11.8,h:5.45,valign:"middle",fontFace:"Arial",fit:"shrink"});
       }
     });
     const blob=await Promise.race([pptx.write({outputType:"blob"}),new Promise((_,rej)=>setTimeout(()=>rej(new Error("délai dépassé")),60000))]);
