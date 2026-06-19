@@ -41,7 +41,7 @@ function costEUR(){return COST.usd*USD_TO_EUR;}
 function resetCost(){COST.usd=0;COST.ci=0;COST.co=0;COST.pi=0;COST.po=0;COST.calls=0;costNotify();}
 
 /* ─── Avatar & préférences de l'enseignante ─── */
-const AVA_GREETING="Bonjour, je suis Ophélie 👋 Personnalise-moi : dis-moi qui tu es, comment tu aimes animer tes cours, le style de tes PDF et PowerPoint, tes citations préférées… et l'IA en tiendra compte pour tout créer à ta façon.";
+const AVA_GREETING="Bonjour, je suis Ophélie 👋 Personnalise-moi : dis-moi qui tu es, comment tu aimes animer tes cours, le style de tes PDF et PowerPoint, ton état d'esprit… et l'IA en tiendra compte pour tout créer à ta façon.";
 const DEFAULT_PROFILE={name:"Ophélie CUYNET",photo:"",greeting:"",bio:"",teaching:"",courseLikes:"",format:"",classes:"",citations:"",pdfStyle:"",pptStyle:"",docs:[]};
 
 /* ─── UE DATABASE (compact) ─── */
@@ -427,14 +427,13 @@ const avaDocRef=useRef(null);
 function setP(k,v){setProfile(p=>({...p,[k]:v}));}
 function onAvaPhoto(e){const f=e.target.files&&e.target.files[0];if(!f)return;if(f.size>3*1024*1024){alert("Photo trop lourde (max 3 Mo).");return;}const r=new FileReader();r.onload=()=>setP("photo",r.result);r.readAsDataURL(f);}
 async function onAvaDoc(e){const fs=e.target.files;if(!fs)return;for(const f of Array.from(fs)){try{const p=await processFile(f);setProfile(pr=>({...pr,docs:[...(pr.docs||[]),{name:p.name,text:(p.text||"").slice(0,4000)}]}));}catch(err){}}}
-function avaSpeak(){try{if(!window.speechSynthesis)return;window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(profile.greeting||AVA_GREETING);u.lang="fr-FR";u.rate=1.03;window.speechSynthesis.speak(u);}catch(e){}}
 function profileContext(){const p=profile;const b=[];
   if(p.bio)b.push("Qui je suis : "+p.bio);
   if(p.teaching)b.push("Comment j'aime animer mes cours : "+p.teaching);
   if(p.courseLikes)b.push("Ce que j'aime dans mes cours : "+p.courseLikes);
   if(p.format)b.push("Format/structure préférés : "+p.format);
   if(p.classes)b.push("Mes classes / mon public : "+p.classes);
-  if(p.citations)b.push("Citations et références que j'aime utiliser : "+p.citations);
+  if(p.citations)b.push("Mon état d'esprit / contexte / ton (à garder en tête pour adapter le ton et l'approche — NE PAS recopier tel quel dans le cours) : "+p.citations);
   if(p.docs&&p.docs.length)b.push("Documents de référence fournis : "+p.docs.map(d=>d.name).join(", "));
   return b.length?("\n\n━━ PRÉFÉRENCES DE L'ENSEIGNANTE (Ophélie) — à respecter autant que possible ━━\n"+b.join("\n")):"";}
 function saveKeys(){
@@ -1476,7 +1475,7 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f97316aa}
 {k:"courseLikes",l:"💛 Ce que j'aime dans mes cours",ph:"Rigueur scientifique, vulgarisation, cas pratiques sportifs…"},
 {k:"format",l:"📐 Format / structure préférés",ph:"Objectifs au début, schémas, encadrés clés, synthèse finale…"},
 {k:"classes",l:"👥 Mes classes / mon public",ph:"L1 STAPS, groupes de TD, niveaux, attentes…"},
-{k:"citations",l:"💬 Citations / références que j'aime",ph:"Auteurs, ouvrages, citations à réutiliser…"},
+{k:"citations",l:"💬 Mon état d'esprit / contexte",ph:"Ton, valeurs, ambiance que j'aime donner, ce qui m'inspire… (sert de contexte à l'IA, PAS à recopier dans les cours)"},
 {k:"pdfStyle",l:"📄 Style de mes PDF",ph:"Couleurs, fond, sobre ou coloré, mise en page…"},
 {k:"pptStyle",l:"📊 Style de mes PowerPoint",ph:"Fond, couleurs dominantes, ambiance, peu de texte…"}].map(f=>
 <div key={f.k} className="fd"><label className="lb">{f.l}</label><textarea className="ta2" rows={2} value={profile[f.k]||""} onChange={e=>setP(f.k,e.target.value)} placeholder={f.ph}/></div>)}
@@ -1485,10 +1484,7 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f97316aa}
 <input ref={avaDocRef} type="file" multiple accept=".pdf,.txt,.md,.csv,.json,.doc,.docx,.jpg,.png" style={{display:"none"}} onChange={onAvaDoc}/>
 {profile.docs&&profile.docs.length>0&&<div className="file-list">{profile.docs.map((d,i)=><div key={i} className="file-item"><span className="file-icon">📄</span><span className="file-name">{d.name}</span><button className="file-rm" onClick={()=>setProfile(p=>({...p,docs:p.docs.filter((_,j)=>j!==i)}))}>×</button></div>)}</div>}
 </div>
-<div style={{display:"flex",gap:8,marginTop:10}}>
-<button className="gn" style={{marginTop:0,flex:1}} onClick={()=>setShowAva(false)}>✅ Enregistrer</button>
-<button className="bs" onClick={avaSpeak}>🔊 Tester la voix</button>
-</div>
+<button className="gn" style={{marginTop:10}} onClick={()=>setShowAva(false)}>✅ Enregistrer</button>
 </div>
 </div>}
 
@@ -1532,8 +1528,7 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f97316aa}
 <div className="ava-hi">{profile.name||"Mon avatar"}</div>
 <div className="ava-say">{profile.greeting||AVA_GREETING}</div>
 <div className="ava-acts">
-<button className="bp" onClick={avaSpeak}>🔊 Écouter</button>
-<button className="bs" onClick={()=>setShowAva(true)}>✏️ Personnaliser mon avatar</button>
+<button className="bp" onClick={()=>setShowAva(true)}>✏️ Personnaliser mon avatar</button>
 <button className="bs" onClick={()=>setPg("create")}>✨ Créer un cours</button>
 </div>
 </div>
