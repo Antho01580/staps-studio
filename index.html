@@ -869,7 +869,7 @@ RÈGLES DE BEAUTÉ :
     s0.addText(meta.title,{x:0.6,y:1.75,w:12.1,h:1.6,fontSize:36,bold:true,color:"FFFFFF",fontFace:"Arial"});
     if(meta.sub)s0.addText(meta.sub,{x:0.6,y:3.45,w:12.1,h:0.6,fontSize:15,color:"BFD0E8",fontFace:"Arial"});
     const head=(sl,title)=>{sl.background={color:"FFFFFF"};sl.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.33,h:1.05,fill:{color:NAVY}});sl.addShape(pptx.ShapeType.rect,{x:0,y:1.05,w:13.33,h:0.07,fill:{color:ORANGE}});sl.addText(title,{x:0.55,y:0.12,w:12.2,h:0.82,fontSize:24,bold:true,color:"FFFFFF",valign:"middle",fontFace:"Arial"});sl.addText("WE-FORM · STAPS Course Studio",{x:0.5,y:7.08,w:12.3,h:0.3,fontSize:9,color:"94A3B8",align:"right",fontFace:"Arial"});};
-    const flow=(sl,steps)=>{const n=Math.min(steps.length,6);if(!n)return;const gap=0.3,total=12.5,bw=(total-(n-1)*gap)/n,x0=(13.33-total)/2,y=2.7,h=2.05;for(let i=0;i<n;i++){const x=x0+i*(bw+gap);sl.addShape(pptx.ShapeType.roundRect,{x:x,y:y,w:bw,h:h,fill:{color:SCOLS[i%SCOLS.length]},rectRadius:0.14});sl.addText(String(steps[i]||"").slice(0,48),{x:x+0.08,y:y,w:bw-0.16,h:h,align:"center",valign:"middle",fontSize:14,bold:true,color:"FFFFFF",fontFace:"Arial"});if(i<n-1)sl.addText("➜",{x:x+bw-gap*0.5-0.06,y:y,w:gap+0.12,h:h,align:"center",valign:"middle",fontSize:24,bold:true,color:"94A3B8",fontFace:"Arial"});}};
+    const flow=(sl,steps)=>{const n=Math.min(steps.length,6);if(!n)return;const gap=0.3,total=12.5,bw=(total-(n-1)*gap)/n,x0=(13.33-total)/2,y=3.15,h=2.1;for(let i=0;i<n;i++){const x=x0+i*(bw+gap);sl.addShape(pptx.ShapeType.roundRect,{x:x,y:y,w:bw,h:h,fill:{color:SCOLS[i%SCOLS.length]},rectRadius:0.14});sl.addText(String(steps[i]||"").slice(0,48),{x:x+0.08,y:y,w:bw-0.16,h:h,align:"center",valign:"middle",fontSize:14,bold:true,color:"FFFFFF",fontFace:"Arial"});if(i<n-1)sl.addText("➜",{x:x+bw-gap*0.5-0.06,y:y,w:gap+0.12,h:h,align:"center",valign:"middle",fontSize:24,bold:true,color:"94A3B8",fontFace:"Arial"});}};
     slides.forEach(d=>{
       const title=stripMd(d.title||meta.title);
       if(d.type==="table" && d.head && d.rows && d.rows.length){
@@ -888,15 +888,16 @@ RÈGLES DE BEAUTÉ :
       } else {
         const bl=(d.bullets||[]).map(x=>cleanKeepBold(x)).filter(Boolean);
         const sl=pptx.addSlide(); head(sl,title);
-        sl.addShape(pptx.ShapeType.rect,{x:0.55,y:1.4,w:0.07,h:5.35,fill:{color:ORANGE}});
-        const fs=bl.length>6?15:17, runs=[];
+        sl.addShape(pptx.ShapeType.roundRect,{x:0.5,y:1.32,w:12.33,h:5.55,fill:{color:"F6F8FC"},line:{color:"E2E8F0",width:1},rectRadius:0.1});
+        sl.addShape(pptx.ShapeType.roundRect,{x:0.5,y:1.32,w:0.16,h:5.55,fill:{color:ORANGE},rectRadius:0.08});
+        const fs=bl.length>=7?15.5:(bl.length<=4?20:17.5), runs=[];
         bl.forEach(b=>{
           const raw=b.split(/\*\*(.*?)\*\*/g); const segs=[];
           raw.forEach((p,i)=>{ if(p!=="")segs.push({t:p,bold:i%2===1}); });
           if(!segs.length)segs.push({t:b,bold:false});
-          segs.forEach((s,j)=>runs.push({text:s.t,options:{bullet:j===0?{indent:22}:false,breakLine:j===segs.length-1,bold:s.bold,color:s.bold?NAVY:"1F2937",fontSize:fs,paraSpaceAfter:j===segs.length-1?15:0}}));
+          segs.forEach((s,j)=>runs.push({text:s.t,options:{bullet:j===0?{indent:24,code:"2022"}:false,breakLine:j===segs.length-1,bold:s.bold,color:s.bold?NAVY:"334155",fontSize:fs,paraSpaceAfter:j===segs.length-1?16:0}}));
         });
-        if(runs.length)sl.addText(runs,{x:0.88,y:1.35,w:11.8,h:5.45,valign:"middle",fontFace:"Arial",fit:"shrink"});
+        if(runs.length)sl.addText(runs,{x:1.0,y:1.5,w:11.55,h:5.2,valign:"middle",fontFace:"Arial",fit:"shrink"});
       }
     });
     const blob=await Promise.race([pptx.write({outputType:"blob"}),new Promise((_,rej)=>setTimeout(()=>rej(new Error("délai dépassé")),60000))]);
