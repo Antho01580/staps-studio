@@ -273,6 +273,34 @@ async function processFile(file) {
 // ── Export : analyse du cours en blocs + générateurs HTML / PPTX / PDF ──
 function stripMd(s){return (s||"").replace(/\[([^\]]+)\]\([^)]*\)/g,"$1").replace(/\*\*(.*?)\*\*/g,"$1").replace(/\*(.*?)\*/g,"$1").replace(/`/g,"").replace(/\s*\[(\d+)\]/g,"").replace(/\s{2,}/g," ").trim();}
 function cleanKeepBold(s){return String(s||"").replace(/\[([^\]]+)\]\([^)]*\)/g,"$1").replace(/`/g,"").replace(/\s*\[(\d+)\]/g,"").replace(/\s{2,}/g," ").trim();}
+function svgToPng(svgStr){
+  return new Promise((res)=>{
+    try{
+      let w=1000,h=150;
+      const m=/viewBox="([\d.\s-]+)"/.exec(svgStr);
+      if(m){const p=m[1].trim().split(/\s+/).map(Number);if(p.length===4&&p[2]>0){w=1000;h=Math.round(1000*p[3]/p[2]);}}
+      let s=svgStr;
+      if(s.indexOf("xmlns=")===-1)s=s.replace("<svg",'<svg xmlns="http://www.w3.org/2000/svg"');
+      s=s.replace(/<svg/,'<svg width="'+w+'" height="'+h+'"');
+      const url="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(s);
+      const img=new Image();
+      img.onload=()=>{try{const c=document.createElement("canvas");c.width=w;c.height=h;const ctx=c.getContext("2d");ctx.fillStyle="#ffffff";ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);res(c.toDataURL("image/png"));}catch(e){res(null);}};
+      img.onerror=()=>res(null);
+      img.src=url;
+    }catch(e){res(null);}
+  });
+}
+async function svgsToImages(html){
+  try{
+    const tmp=document.createElement("div"); tmp.innerHTML=html;
+    const svgs=Array.from(tmp.querySelectorAll("svg"));
+    for(const svg of svgs){
+      const png=await svgToPng(svg.outerHTML);
+      if(png){const img=document.createElement("img");img.src=png;img.setAttribute("style","max-width:100%;display:block;margin:8px 0");svg.parentNode.replaceChild(img,svg);}
+    }
+    return tmp.innerHTML;
+  }catch(e){return html;}
+}
 function inlineHTML(s){
   let h=(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   h=h.replace(/\[([^\]]+)\]\(([^)]+)\)/g,"$1");
@@ -581,6 +609,7 @@ function onCourseSelect(e){
   let r=null;try{r=s.getRangeAt(0).getBoundingClientRect();}catch(err){}
   try{SEL_RANGE=s.getRangeAt(0).cloneRange();}catch(err){SEL_RANGE=null;}
   try{const dv=document.createElement("div");dv.appendChild(s.getRangeAt(0).cloneContents());SEL_HTML=dv.innerHTML;}catch(err){SEL_HTML="";}
+  if(SEL_HTML.indexOf("<svg")>-1){ const src=SEL_HTML; svgsToImages(src).then(h=>{if(SEL_HTML===src)SEL_HTML=h;}); } // schémas -> images pour le collage
   const cx=e?e.clientX:(r?Math.round(r.left+r.width/2):200), cy=e?e.clientY:(r?Math.round(r.bottom):200);
   setSelText(t);
   setSelPos({x:cx, y:cy});
@@ -659,6 +688,7 @@ function citedSrc(){
 }
 async function selCopy(withSources){
   let html=SEL_HTML||("<p>"+selText+"</p>"), text=selText;
+  if(html.indexOf("<svg")>-1){ try{ html=await svgsToImages(html); }catch(e){} }
   if(withSources){
     const cs=citedSrc();
     if(cs.length){
