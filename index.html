@@ -43,6 +43,8 @@ function resetCost(){COST.usd=0;COST.ci=0;COST.co=0;COST.pi=0;COST.po=0;COST.cal
 /* ─── Avatar & préférences de l'enseignante ─── */
 const AVA_GREETING="Bonjour, je suis Ophélie 👋 Personnalise-moi : dis-moi qui tu es, comment tu aimes animer tes cours, le style de tes PDF et PowerPoint, ton état d'esprit… et l'IA en tiendra compte pour tout créer à ta façon.";
 const DEFAULT_PROFILE={name:"Ophélie CUYNET",photo:"",greeting:"",bio:"",teaching:"",courseLikes:"",format:"",classes:"",citations:"",pdfStyle:"",pptStyle:"",docs:[]};
+let SEL_RANGE=null; // mémorise la sélection du cours pour le copier-coller
+let SEL_HTML=""; // HTML de la sélection (pour copier avec mise en forme)
 
 /* ─── UE DATABASE (compact) ─── */
 const DB={
@@ -574,6 +576,8 @@ function onCourseSelect(e){
   const t=s?s.toString().trim():"";
   if(t.length<2)return; // simple clic : on ne touche pas au popup (fermeture via ✕)
   let r=null;try{r=s.getRangeAt(0).getBoundingClientRect();}catch{}
+  try{SEL_RANGE=s.getRangeAt(0).cloneRange();}catch(e){SEL_RANGE=null;}
+  try{const dv=document.createElement("div");dv.appendChild(s.getRangeAt(0).cloneContents());SEL_HTML=dv.innerHTML;}catch(e){SEL_HTML="";}
   setSelText(t);
   setSelPos({x:r?Math.round(r.left+r.width/2):e.clientX, y:r?Math.round(r.bottom):e.clientY});
   setSelAns(null);setSelInstr("");setSelOpen(true);
@@ -643,13 +647,24 @@ async function selSources(){
   }catch(e){setSelAns({kind:"err",text:e.message});}
   setSelBusy("");
 }
-function selCopy(){
-  // copie native de la sélection encore active = conserve la mise en forme (gras, couleurs, tableaux)
+async function selCopy(){
   let ok=false;
-  try{ ok=document.execCommand("copy"); }catch(e){}
-  if(!ok){ try{ navigator.clipboard.writeText(selText); }catch(e){} }
-  setSelBusy("✅ Copié !");
-  setTimeout(()=>{setSelBusy("");setSelOpen(false);},700);
+  // 1) API Clipboard moderne : copie HTML (gras, tableaux…) + texte
+  try{
+    if(navigator.clipboard && window.ClipboardItem && SEL_HTML){
+      await navigator.clipboard.write([new window.ClipboardItem({
+        "text/html": new Blob([SEL_HTML],{type:"text/html"}),
+        "text/plain": new Blob([selText],{type:"text/plain"})
+      })]);
+      ok=true;
+    }
+  }catch(e){}
+  // 2) repli : texte simple via Clipboard API
+  if(!ok){ try{ await navigator.clipboard.writeText(selText); ok=true; }catch(e){} }
+  // 3) repli ultime : sélection native + execCommand
+  if(!ok){ try{ if(SEL_RANGE){const s=window.getSelection();s.removeAllRanges();s.addRange(SEL_RANGE);} ok=document.execCommand("copy"); }catch(e){} }
+  setSelBusy(ok?"✅ Copié ! (colle avec Ctrl+V)":"⚠️ Copie impossible");
+  setTimeout(()=>{setSelBusy("");if(ok)setSelOpen(false);},1100);
 }
 
 async function handleFiles(fileList, setter) {
