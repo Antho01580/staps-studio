@@ -647,24 +647,35 @@ async function selSources(){
   }catch(e){setSelAns({kind:"err",text:e.message});}
   setSelBusy("");
 }
-async function selCopy(){
+function citedSrc(){
+  const nums=Array.from(new Set((selText.match(/\[(\d+)\]/g)||[]).map(m=>parseInt(m.replace(/\D/g,""),10)))).filter(n=>n>0).sort((a,b)=>a-b);
+  const srcs=(courses[activeC]&&courses[activeC].sources)||[];
+  return nums.map(n=>({n,url:srcs[n-1]})).filter(x=>x.url);
+}
+async function selCopy(withSources){
+  let html=SEL_HTML||("<p>"+selText+"</p>"), text=selText;
+  if(withSources){
+    const cs=citedSrc();
+    if(cs.length){
+      text += "\n\nSources :\n" + cs.map(c=>"["+c.n+"] "+c.url).join("\n");
+      html += '<br><br><strong>Sources :</strong><br>' + cs.map(c=>"["+c.n+'] <a href="'+c.url+'">'+c.url+"</a>").join("<br>");
+    }
+  }
   let ok=false;
-  // 1) API Clipboard moderne : copie HTML (gras, tableaux…) + texte
   try{
-    if(navigator.clipboard && window.ClipboardItem && SEL_HTML){
+    if(navigator.clipboard && window.ClipboardItem){
       await navigator.clipboard.write([new window.ClipboardItem({
-        "text/html": new Blob([SEL_HTML],{type:"text/html"}),
-        "text/plain": new Blob([selText],{type:"text/plain"})
+        "text/html": new Blob([html],{type:"text/html"}),
+        "text/plain": new Blob([text],{type:"text/plain"})
       })]);
       ok=true;
     }
   }catch(e){}
-  // 2) repli : texte simple via Clipboard API
-  if(!ok){ try{ await navigator.clipboard.writeText(selText); ok=true; }catch(e){} }
-  // 3) repli ultime : sélection native + execCommand
-  if(!ok){ try{ if(SEL_RANGE){const s=window.getSelection();s.removeAllRanges();s.addRange(SEL_RANGE);} ok=document.execCommand("copy"); }catch(e){} }
-  setSelBusy(ok?"✅ Copié ! (colle avec Ctrl+V)":"⚠️ Copie impossible");
-  setTimeout(()=>{setSelBusy("");if(ok)setSelOpen(false);},1100);
+  if(!ok){ try{ await navigator.clipboard.writeText(text); ok=true; }catch(e){} }
+  if(!ok && !withSources){ try{ if(SEL_RANGE){const s=window.getSelection();s.removeAllRanges();s.addRange(SEL_RANGE);} ok=document.execCommand("copy"); }catch(e){} }
+  const ns=withSources?citedSrc().length:0;
+  setSelBusy(ok?("✅ Copié"+(withSources&&ns?" + "+ns+" source"+(ns>1?"s":""):"")+" ! (Ctrl+V)"):"⚠️ Copie impossible");
+  setTimeout(()=>{setSelBusy("");if(ok)setSelOpen(false);},1200);
 }
 
 async function handleFiles(fileList, setter) {
@@ -1350,8 +1361,11 @@ return(<div className="app"><style>{`
 .selpop-x{background:none;border:none;color:#8899b5;cursor:pointer;font-size:14px;font-family:inherit;line-height:1}
 .selpop-x:hover{color:#e8ecf4}
 .selpop-sel{font-size:10px;color:#fdba74;background:#f9731612;border:1px solid #f9731630;border-radius:6px;padding:6px 8px;margin-bottom:8px;max-height:56px;overflow:auto;font-style:italic;line-height:1.4}
-.selpop-copy{width:100%;padding:9px;border-radius:7px;border:none;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px}
+.selpop-copyrow{display:flex;gap:6px;margin-bottom:8px}
+.selpop-copy{flex:1;padding:9px;border-radius:7px;border:none;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit}
+.selpop-copy.alt{flex:0 0 auto;background:#1a2236;border:1px solid #2a3550;color:#8899b5;font-weight:600}
 .selpop-copy:hover{filter:brightness(1.1)}
+.selpop-copy.alt:hover{background:#1f2b42;color:#e8ecf4}
 .selpop-acts{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px}
 .selpop-acts button{padding:7px 8px;border-radius:6px;border:1px solid #2a3550;background:#111827;color:#e8ecf4;cursor:pointer;font-size:10px;font-weight:500;font-family:inherit;text-align:left}
 .selpop-acts button:hover{background:#1a2236;border-color:#f9731650;color:#fdba74}
@@ -1493,7 +1507,10 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f97316aa}
 {selOpen&&<div className="selpop" style={(()=>{const vw=typeof window!=="undefined"?window.innerWidth:1200,vh=typeof window!=="undefined"?window.innerHeight:800,left=Math.max(8,Math.min(selPos.x-170,vw-348));return (vh-selPos.y>380)?{left,top:selPos.y+10}:{left,bottom:Math.max(8,vh-(selPos.top!=null?selPos.top:selPos.y)+10)};})()}>
 <div className="selpop-hd"><span style={{fontSize:12,fontWeight:700}}>✨ Modifier avec l'IA</span><button className="selpop-x" onClick={()=>setSelOpen(false)}>✕</button></div>
 <div className="selpop-sel">« {selText.length>120?selText.slice(0,120)+"…":selText} »</div>
-<button className="selpop-copy" onMouseDown={e=>e.preventDefault()} onClick={selCopy} title="Copier la sélection en gardant la mise en forme (pour coller dans ton PowerPoint)">📋 Copier (avec mise en forme)</button>
+<div className="selpop-copyrow">
+<button className="selpop-copy" onMouseDown={e=>e.preventDefault()} onClick={()=>selCopy(true)} title="Copier le passage (mise en forme) + les sources citées">📋 Copier avec sources</button>
+<button className="selpop-copy alt" onMouseDown={e=>e.preventDefault()} onClick={()=>selCopy(false)} title="Copier le passage seul (mise en forme)">Sans sources</button>
+</div>
 <div className="selpop-acts">
 <button onClick={()=>selEdit("Reformule ce passage de façon plus claire, en gardant le même sens.")}>✏️ Reformuler</button>
 <button onClick={()=>selEdit("Développe et enrichis ce passage avec plus de détails, exemples et précisions.")}>➕ Développer</button>
