@@ -643,6 +643,14 @@ async function selSources(){
   }catch(e){setSelAns({kind:"err",text:e.message});}
   setSelBusy("");
 }
+function selCopy(){
+  // copie native de la sélection encore active = conserve la mise en forme (gras, couleurs, tableaux)
+  let ok=false;
+  try{ ok=document.execCommand("copy"); }catch(e){}
+  if(!ok){ try{ navigator.clipboard.writeText(selText); }catch(e){} }
+  setSelBusy("✅ Copié !");
+  setTimeout(()=>{setSelBusy("");setSelOpen(false);},700);
+}
 
 async function handleFiles(fileList, setter) {
   const processed = [];
@@ -1327,6 +1335,8 @@ return(<div className="app"><style>{`
 .selpop-x{background:none;border:none;color:#8899b5;cursor:pointer;font-size:14px;font-family:inherit;line-height:1}
 .selpop-x:hover{color:#e8ecf4}
 .selpop-sel{font-size:10px;color:#fdba74;background:#f9731612;border:1px solid #f9731630;border-radius:6px;padding:6px 8px;margin-bottom:8px;max-height:56px;overflow:auto;font-style:italic;line-height:1.4}
+.selpop-copy{width:100%;padding:9px;border-radius:7px;border:none;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px}
+.selpop-copy:hover{filter:brightness(1.1)}
 .selpop-acts{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px}
 .selpop-acts button{padding:7px 8px;border-radius:6px;border:1px solid #2a3550;background:#111827;color:#e8ecf4;cursor:pointer;font-size:10px;font-weight:500;font-family:inherit;text-align:left}
 .selpop-acts button:hover{background:#1a2236;border-color:#f9731650;color:#fdba74}
@@ -1468,6 +1478,7 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f97316aa}
 {selOpen&&<div className="selpop" style={{left:Math.max(8,Math.min(selPos.x-170,(typeof window!=="undefined"?window.innerWidth:1200)-348)),top:selPos.y+10}}>
 <div className="selpop-hd"><span style={{fontSize:12,fontWeight:700}}>✨ Modifier avec l'IA</span><button className="selpop-x" onClick={()=>setSelOpen(false)}>✕</button></div>
 <div className="selpop-sel">« {selText.length>120?selText.slice(0,120)+"…":selText} »</div>
+<button className="selpop-copy" onMouseDown={e=>e.preventDefault()} onClick={selCopy} title="Copier la sélection en gardant la mise en forme (pour coller dans ton PowerPoint)">📋 Copier (avec mise en forme)</button>
 <div className="selpop-acts">
 <button onClick={()=>selEdit("Reformule ce passage de façon plus claire, en gardant le même sens.")}>✏️ Reformuler</button>
 <button onClick={()=>selEdit("Développe et enrichis ce passage avec plus de détails, exemples et précisions.")}>➕ Développer</button>
