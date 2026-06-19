@@ -581,9 +581,9 @@ function onCourseSelect(e){
   let r=null;try{r=s.getRangeAt(0).getBoundingClientRect();}catch(err){}
   try{SEL_RANGE=s.getRangeAt(0).cloneRange();}catch(err){SEL_RANGE=null;}
   try{const dv=document.createElement("div");dv.appendChild(s.getRangeAt(0).cloneContents());SEL_HTML=dv.innerHTML;}catch(err){SEL_HTML="";}
-  const cx=e?e.clientX:200, cy=e?e.clientY:200;
+  const cx=e?e.clientX:(r?Math.round(r.left+r.width/2):200), cy=e?e.clientY:(r?Math.round(r.bottom):200);
   setSelText(t);
-  setSelPos({x:r?Math.round(r.left+r.width/2):cx, y:r?Math.round(r.bottom):cy, top:r?Math.round(r.top):cy});
+  setSelPos({x:cx, y:cy});
   setSelAns(null);setSelInstr("");setSelOpen(true);
 }
 useEffect(()=>{document.addEventListener("mouseup",onCourseSelect);return ()=>document.removeEventListener("mouseup",onCourseSelect);},[]);
@@ -1509,7 +1509,7 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f97316aa}
 </div>
 </div>}
 
-{selOpen&&<div className="selpop" style={(()=>{const vw=typeof window!=="undefined"?window.innerWidth:1200,vh=typeof window!=="undefined"?window.innerHeight:800,left=Math.max(8,Math.min(selPos.x-170,vw-348));return (vh-selPos.y>380)?{left,top:selPos.y+10}:{left,bottom:Math.max(8,vh-(selPos.top!=null?selPos.top:selPos.y)+10)};})()}>
+{selOpen&&<div className="selpop" style={(()=>{const vw=typeof window!=="undefined"?window.innerWidth:1200,vh=typeof window!=="undefined"?window.innerHeight:800,EST=440,left=Math.max(8,Math.min(selPos.x-170,vw-348));let top=selPos.y+12;if(top+EST>vh-8)top=vh-EST-8;if(top<8)top=8;return {left,top};})()}>
 <div className="selpop-hd"><span style={{fontSize:12,fontWeight:700}}>✨ Modifier avec l'IA</span><button className="selpop-x" onClick={()=>setSelOpen(false)}>✕</button></div>
 <div className="selpop-sel">« {selText.length>120?selText.slice(0,120)+"…":selText} »</div>
 <div className="selpop-copyrow">
