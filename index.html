@@ -417,6 +417,8 @@ const editFileRef=useRef(null);
 const[showKeys,setShowKeys]=useState(!CK); // ouvre le réglage au 1er lancement si pas de clé
 const[ckIn,setCkIn]=useState(CK);
 const[pkIn,setPkIn]=useState(PK);
+const[showCk,setShowCk]=useState(false);
+const[showPk,setShowPk]=useState(false);
 const[costTick,setCostTick]=useState(0); // rafraîchit le badge de coût en direct
 useEffect(()=>{const f=()=>setCostTick(t=>t+1);COST._subs.push(f);return ()=>{const i=COST._subs.indexOf(f);if(i>-1)COST._subs.splice(i,1);};},[]);
 // Avatar & préférences
@@ -1442,12 +1444,12 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f97316aa}
 <p style={{fontSize:11,color:"#8899b5",marginBottom:14,lineHeight:1.5}}>Tes clés sont enregistrées <strong>uniquement dans ce navigateur</strong> et ne sont jamais publiées dans le code du site. Renseigne-les une fois.</p>
 <div className="fd" style={{marginBottom:12}}>
 <label className="lb">🔑 Clé API Claude (Anthropic) — requise</label>
-<input className="ip" type="password" value={ckIn} onChange={e=>setCkIn(e.target.value)} placeholder="sk-ant-api03-..." autoComplete="off"/>
+<div style={{position:"relative"}}><input className="ip" type={showCk?"text":"password"} value={ckIn} onChange={e=>setCkIn(e.target.value)} placeholder="sk-ant-api03-..." autoComplete="off" style={{paddingRight:38}}/><button type="button" onClick={()=>setShowCk(s=>!s)} title={showCk?"Masquer":"Afficher"} style={{position:"absolute",right:4,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:15,padding:4,lineHeight:1}}>{showCk?"🙈":"👁️"}</button></div>
 <div style={{fontSize:9,color:"#5a6a85",marginTop:3}}>Crée-la sur console.anthropic.com → API Keys</div>
 </div>
 <div className="fd" style={{marginBottom:14}}>
 <label className="lb">🔑 Clé API Perplexity — optionnelle (recherche sourcée)</label>
-<input className="ip" type="password" value={pkIn} onChange={e=>setPkIn(e.target.value)} placeholder="pplx-..." autoComplete="off"/>
+<div style={{position:"relative"}}><input className="ip" type={showPk?"text":"password"} value={pkIn} onChange={e=>setPkIn(e.target.value)} placeholder="pplx-..." autoComplete="off" style={{paddingRight:38}}/><button type="button" onClick={()=>setShowPk(s=>!s)} title={showPk?"Masquer":"Afficher"} style={{position:"absolute",right:4,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:15,padding:4,lineHeight:1}}>{showPk?"🙈":"👁️"}</button></div>
 <div style={{fontSize:9,color:"#5a6a85",marginTop:3}}>Sans clé Perplexity, les cours sont générés sans la recherche de sources web.</div>
 </div>
 <div style={{display:"flex",gap:8,alignItems:"center"}}>
