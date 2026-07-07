@@ -426,6 +426,7 @@ useEffect(()=>{try{localStorage.setItem("staps_courses",JSON.stringify(courses))
 const[busy,setBusy]=useState(false);
 const[step,setStep]=useState("");
 const[edit,setEdit]=useState("");
+const[nextTheme,setNextTheme]=useState("");
 const[editing,setEditing]=useState(false);
 const[hist,setHist]=useState(()=>{try{return JSON.parse(localStorage.getItem("staps_hist"))||[];}catch{return[];}});
 useEffect(()=>{try{localStorage.setItem("staps_hist",JSON.stringify(hist));}catch{}},[hist]);
@@ -818,6 +819,38 @@ Objectifs pédagogiques par section. Biblio complète sourcée.${n>1?` Tu génè
     }]);
     setPg("result");
   }catch(e){setCourses([{content:`❌ ${e.message}`,sources:[],ts:new Date().toISOString(),num:1,total:1}]);setPg("result");}
+  setBusy(false);setStep("");
+}
+
+async function regen(nextTheme){
+  if(!CK){alert("⚙️ Configure d'abord ta clé API Claude (bouton ⚙️ Clés API).");setShowKeys(true);return;}
+  const cur0=courses[activeC]; if(!cur0)return;
+  const isNext=!!(nextTheme&&String(nextTheme).trim());
+  const theme=isNext?String(nextTheme).trim():(cp.theme||cur0.ue||"");
+  if(!theme){alert("Précise un thème.");return;}
+  const lvl=cp.lvl||cp.promoCours||"";
+  setBusy(true);setStep(isNext?"🔍 Sources (cours suivant)…":"🔍 Sources…");
+  try{
+    const px=await ppx(`Recherche sourcée STAPS: "${theme}" niveau ${lvl}. Fournis connaissances clés AVEC références. CITE SYSTÉMATIQUEMENT.`);
+    setStep(isNext?"🧠 Génération du cours suivant…":"🧠 Régénération…");
+    const prevCtx=isNext?`\n\nCOURS PRÉCÉDENT (assure la CONTINUITÉ pédagogique, enchaîne logiquement SANS répéter) :\n${(cur0.content||"").slice(0,3500)}`:"";
+    const sys=`Expert ingénierie pédagogique STAPS. Cours universitaire haute qualité, TOUT sourcé.
+RÈGLES VISUELLES : schémas [SCHÉMA: A → B → C], organigrammes [ORGANIGRAMME: Titre — Br1 — Br2], tableaux markdown |col|col| avec |---|---|, encadrés > citation, sous-titres ###, AU MOINS 3 schémas + 1 organigramme.
+SOURÇAGE : termine presque chaque paragraphe/point/ligne de tableau par une citation [N] renvoyant aux SOURCES numérotées fournies (couverture quasi totale, réutilise/combine [N][M]).
+COMPLÉTUDE & NUMÉROTATION : génère le cours ENTIER jusqu'à la dernière partie, ne t'arrête JAMAIS au milieu ; si tu annonces N parties, génère-les toutes ; numérotation cohérente (PARTIE 1 → 1.1/1.2/1.3 ; PARTIE 2 → 2.1/2.2 ; JAMAIS de 1.x sous la PARTIE 2).`;
+    const params=`UFR STAPS Bourgogne\nThème: ${theme}\nDurée: ${cp.dur||"2h"}\nNiveau: ${lvl}\nSport: ${cp.sport||"Général"}${isNext?"\nCe cours est LA SUITE du cours précédent (progression logique).":""}`;
+    const r=await cl(sys,`${params}\n\nRECHERCHE PERPLEXITY:\n${px.c}\n${px.s.length?`SOURCES:\n${px.s.map((c,j)=>`[${j+1}] ${c}`).join('\n')}`:""}${prevCtx}\nGénère cours COMPLET, RICHE, SOURCÉ.${profileContext()}`,[],MODEL,16000);
+    if(!r||/^Erreur/i.test(r)){alert("Échec : "+(r||"erreur"));setBusy(false);setStep("");return;}
+    const nc={content:r,sources:px.s,ts:new Date().toISOString(),num:1,total:1,semL:cur0.semL,ue:theme};
+    if(isNext){
+      const arr=[...courses,{...nc,num:courses.length+1,total:courses.length+1}];
+      setCourses(arr);setActiveC(arr.length-1);
+      setHist(h=>[...h,{id:Date.now(),theme:theme,ct:cp.ct,date:new Date().toISOString(),dateLabel:new Date().toLocaleString("fr-FR",{day:"2-digit",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"}),promoCours:cp.promoCours||"",promo:lvl,formation:cur0.semL||"",semester:cur0.semL||"",ue:theme,sport:cp.sport||"",duration:cp.dur||"",nbCours:1,courses:[nc]}]);
+    } else {
+      pushUndo(cur0.content);
+      setCourses(cc=>{const a=[...cc];a[activeC]={...a[activeC],content:r,sources:px.s};return a;});
+    }
+  }catch(e){alert("Erreur : "+e.message);}
   setBusy(false);setStep("");
 }
 
@@ -1427,6 +1460,7 @@ return(<div className="app"><style>{`
 .selpop-src{margin-top:6px;display:flex;flex-direction:column;gap:2px;border-top:1px solid #2a3550;padding-top:6px}
 .selpop-src a{font-size:9px;color:#93c5fd;text-decoration:none;word-break:break-all}
 .sel-hint{display:flex;align-items:center;gap:6px;background:#f9731610;border:1px solid #f9731630;border-radius:6px;padding:7px 10px;margin-bottom:10px;font-size:10px;color:#fdba74}
+.regen-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#3b82f60d;border:1px solid #3b82f628;border-radius:8px;padding:9px 12px;margin-bottom:10px}
 /* Citations [N] + surlignage par source */
 .cite{color:#93c5fd;font-weight:600;font-size:.88em;padding:0 1px;border-radius:3px;transition:all .12s}
 .cite.on{background:#f97316;color:#fff;padding:0 4px;box-shadow:0 0 8px #f9731680}
@@ -1822,6 +1856,12 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f97316aa}
 </div>
 </div>
 
+<div className="regen-bar">
+<button className="ab" style={{color:"#93c5fd",borderColor:"#3b82f640",fontWeight:600}} onClick={()=>regen()} disabled={busy}>{busy?"⏳ …":"🔄 Régénérer ce cours"}</button>
+<span style={{fontSize:11,color:"#8899b5"}}>ou générer <strong>la suite</strong> :</span>
+<input className="ip" style={{maxWidth:300,flex:1,minWidth:180}} value={nextTheme} onChange={e=>setNextTheme(e.target.value)} placeholder="Ex : sport collectif de petit terrain" onKeyDown={e=>{if(e.key==="Enter"&&nextTheme.trim()){regen(nextTheme);setNextTheme("");}}} disabled={busy}/>
+<button className="ab" style={{color:"#fff",background:"linear-gradient(135deg,#3b82f6,#1d4ed8)",border:"none",fontWeight:600}} onClick={()=>{if(nextTheme.trim()){regen(nextTheme);setNextTheme("");}}} disabled={busy||!nextTheme.trim()}>➡️ Cours suivant</button>
+</div>
 <div className="sel-hint">🖱️ <strong>Astuce :</strong> sélectionne n'importe quel passage du cours pour le modifier, l'expliquer ou ajouter un schéma avec l'IA.</div>
 <div className="rg">
 <div className="cbox"><RichRenderer text={cur?.content} mode={viewMode}/></div>
