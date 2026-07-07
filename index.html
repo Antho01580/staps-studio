@@ -209,10 +209,11 @@ const CT=[{id:"cm",n:"CM",i:"🎓"},{id:"td",n:"TD",i:"📝"},{id:"tp",n:"TP",i:
 const OO=[{id:"schemas",n:"Schémas"},{id:"organigrammes",n:"Organigrammes"},{id:"tableaux",n:"Tableaux"},{id:"cas_concrets",n:"Cas concrets"},{id:"exercices",n:"Exercices"},{id:"quiz",n:"Quiz/QCM"},{id:"bibliographie",n:"Bibliographie"},{id:"fiches",n:"Fiches synthèse"}];
 
 async function ppx(p){try{const r=await fetch("https://api.perplexity.ai/chat/completions",{method:"POST",headers:{"Authorization":`Bearer ${PK}`,"Content-Type":"application/json"},body:JSON.stringify({model:"sonar-pro",messages:[{role:"system",content:"Expert STAPS, pédagogie universitaire, formation sportive France. Toujours sourcé."},{role:"user",content:p}],max_tokens:2500,temperature:.3,return_citations:true})});const d=await r.json();addPplxUsage(d.usage);
+const cu=x=>(!x?null:(typeof x==="string"?x:(x.url||x.link||x.source||null)));
 let cites=[];
-if(Array.isArray(d.citations)&&d.citations.length)cites=d.citations;
-else if(Array.isArray(d.search_results))cites=d.search_results.map(x=>x&&(x.url||x.link)).filter(Boolean);
-else if(Array.isArray(d.choices?.[0]?.message?.citations))cites=d.choices[0].message.citations;
+if(Array.isArray(d.citations)&&d.citations.length)cites=d.citations.map(cu).filter(Boolean);
+else if(Array.isArray(d.search_results))cites=d.search_results.map(cu).filter(Boolean);
+else if(Array.isArray(d.choices?.[0]?.message?.citations))cites=d.choices[0].message.citations.map(cu).filter(Boolean);
 return{c:d.choices?.[0]?.message?.content||"",s:cites};}catch(e){return{c:"",s:[]};}}
 async function cl(s, u, files=[], model, maxTok){
   const mdl=model||MODEL;
@@ -516,6 +517,16 @@ useEffect(()=>{
     if(sec)sec.classList.add("src-hl-sec");
   });
 },[hovSrc,activeC,viewMode,courses]);
+// Citations [N] interactives : survol -> allume la source + passages liés ; clic -> ouvre la source
+useEffect(()=>{
+  const box=document.querySelector(".cbox"); if(!box)return;
+  const srcAt=c=>{const n=parseInt(c.getAttribute("data-src"),10);const s=(courses[activeC]&&courses[activeC].sources)||[];return {n,url:s[n-1]};};
+  const onOver=e=>{const c=e.target.closest&&e.target.closest(".cite");if(c){const {n}=srcAt(c);if(n)setHovSrc(n);}};
+  const onOut=e=>{const c=e.target.closest&&e.target.closest(".cite");if(c)setHovSrc(null);};
+  const onClick=e=>{const c=e.target.closest&&e.target.closest(".cite");if(!c)return;const {url}=srcAt(c);if(url){e.preventDefault();window.open(url,"_blank","noopener");}};
+  box.addEventListener("mouseover",onOver);box.addEventListener("mouseout",onOut);box.addEventListener("click",onClick);
+  return ()=>{box.removeEventListener("mouseover",onOver);box.removeEventListener("mouseout",onOut);box.removeEventListener("click",onClick);};
+},[activeC,viewMode,courses]);
 function pushUndo(prev){if(prev)setUndoStk(u=>[...u,prev].slice(-20));}
 function doUndo(){setUndoStk(u=>{if(!u.length)return u;const last=u[u.length-1];setCourses(c=>{const nc=[...c];if(nc[activeC])nc[activeC]={...nc[activeC],content:last};return nc;});return u.slice(0,-1);});}
 // ── Vidéo de révision (résumé animé + narration vocale) ──
@@ -1476,7 +1487,8 @@ return(<div className="app"><style>{`
 .sel-hint{display:flex;align-items:center;gap:6px;background:#f9731610;border:1px solid #f9731630;border-radius:6px;padding:7px 10px;margin-bottom:10px;font-size:10px;color:#fdba74}
 .regen-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#3b82f60d;border:1px solid #3b82f628;border-radius:8px;padding:9px 12px;margin-bottom:10px}
 /* Citations [N] + surlignage par source */
-.cite{color:#93c5fd;font-weight:600;font-size:.88em;padding:0 1px;border-radius:3px;transition:all .12s}
+.cite{color:#93c5fd;font-weight:600;font-size:.88em;padding:0 1px;border-radius:3px;transition:all .12s;cursor:pointer}
+.cite:hover{background:#93c5fd33;text-decoration:underline}
 .cite.on{background:#f97316;color:#fff;padding:0 4px;box-shadow:0 0 8px #f9731680}
 .src-hl{background:#f9731626;border-radius:6px;box-shadow:0 0 0 2px #f97316aa;transition:background .12s}
 td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f97316aa}
@@ -1904,7 +1916,7 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f97316aa}
   {editFiles.map((f,i)=><div key={i} className="file-item"><span className="file-icon">{f.type==="application/pdf"?"📄":"📝"}</span><span className="file-name">{f.name}</span><button className="file-rm" onClick={()=>removeFile(i,setEditFiles)}>×</button></div>)}
 </div>}
 <button className="ego" onClick={doEdit} disabled={editing||!edit}>{editing?"⏳":"🔄 Appliquer"}</button>
-{cur?.sources?.length>0&&<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #2a3550"}}><div style={{fontSize:11,fontWeight:600,color:"#8899b5",marginBottom:3}}>🔗 Sources <span style={{fontWeight:400,fontSize:8,color:"#5a6a85"}}>(survole une source → ses citations s'allument dans le cours)</span></div>{cur.sources.map((s,i)=><a key={i} href={s} target="_blank" rel="noopener noreferrer" onMouseEnter={()=>setHovSrc(i+1)} onMouseLeave={()=>setHovSrc(null)} style={{display:"block",fontSize:8,color:hovSrc===i+1?"#fdba74":"#93c5fd",background:hovSrc===i+1?"#f9731620":"transparent",borderRadius:4,padding:"2px 4px",marginBottom:1,wordBreak:"break-all",textDecoration:"none"}}>[{i+1}] {s.length>45?s.substring(0,45)+"...":s}</a>)}</div>}
+{cur?.sources?.length>0&&<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #2a3550"}}><div style={{fontSize:11,fontWeight:600,color:"#8899b5",marginBottom:3}}>🔗 Sources <span style={{fontWeight:400,fontSize:8,color:"#5a6a85"}}>(survole une source → ses passages s'allument · survole/clique un [N] dans le cours → sa source)</span></div>{cur.sources.map((s,i)=><a key={i} href={s} target="_blank" rel="noopener noreferrer" onMouseEnter={()=>setHovSrc(i+1)} onMouseLeave={()=>setHovSrc(null)} style={{display:"block",fontSize:8,color:hovSrc===i+1?"#fdba74":"#93c5fd",background:hovSrc===i+1?"#f9731620":"transparent",borderRadius:4,padding:"2px 4px",marginBottom:1,wordBreak:"break-all",textDecoration:"none"}}>[{i+1}] {s.length>45?s.substring(0,45)+"...":s}</a>)}</div>}
 </div>
 </div>
 </>}
