@@ -208,8 +208,13 @@ const SP=["Football","Rugby","Basketball","Handball","Volleyball","Tennis","Athl
 const CT=[{id:"cm",n:"CM",i:"🎓"},{id:"td",n:"TD",i:"📝"},{id:"tp",n:"TP",i:"🏃"},{id:"cas",n:"Cas Pratique",i:"🧩"},{id:"groupe",n:"Groupe",i:"👥"},{id:"eval",n:"Évaluation",i:"✅"},{id:"seance",n:"Séance Sport",i:"⚡"},{id:"hybride",n:"Hybride",i:"🔄"}];
 const OO=[{id:"schemas",n:"Schémas"},{id:"organigrammes",n:"Organigrammes"},{id:"tableaux",n:"Tableaux"},{id:"cas_concrets",n:"Cas concrets"},{id:"exercices",n:"Exercices"},{id:"quiz",n:"Quiz/QCM"},{id:"bibliographie",n:"Bibliographie"},{id:"fiches",n:"Fiches synthèse"}];
 
-async function ppx(p){try{const r=await fetch("https://api.perplexity.ai/chat/completions",{method:"POST",headers:{"Authorization":`Bearer ${PK}`,"Content-Type":"application/json"},body:JSON.stringify({model:"sonar-pro",messages:[{role:"system",content:"Expert STAPS, pédagogie universitaire, formation sportive France. Toujours sourcé."},{role:"user",content:p}],max_tokens:2500,temperature:.3,return_citations:true})});const d=await r.json();addPplxUsage(d.usage);return{c:d.choices?.[0]?.message?.content||"",s:d.citations||[]};}catch(e){return{c:"",s:[]};}}
-async function cl(s, u, files=[], model){
+async function ppx(p){try{const r=await fetch("https://api.perplexity.ai/chat/completions",{method:"POST",headers:{"Authorization":`Bearer ${PK}`,"Content-Type":"application/json"},body:JSON.stringify({model:"sonar-pro",messages:[{role:"system",content:"Expert STAPS, pédagogie universitaire, formation sportive France. Toujours sourcé."},{role:"user",content:p}],max_tokens:2500,temperature:.3,return_citations:true})});const d=await r.json();addPplxUsage(d.usage);
+let cites=[];
+if(Array.isArray(d.citations)&&d.citations.length)cites=d.citations;
+else if(Array.isArray(d.search_results))cites=d.search_results.map(x=>x&&(x.url||x.link)).filter(Boolean);
+else if(Array.isArray(d.choices?.[0]?.message?.citations))cites=d.choices[0].message.citations;
+return{c:d.choices?.[0]?.message?.content||"",s:cites};}catch(e){return{c:"",s:[]};}}
+async function cl(s, u, files=[], model, maxTok){
   const mdl=model||MODEL;
   try {
     // Build multimodal content: text + attached files (PDF/images)
@@ -230,7 +235,7 @@ async function cl(s, u, files=[], model){
     const r = await fetch("https://api.anthropic.com/v1/messages",{
       method:"POST",
       headers:{"Content-Type":"application/json","x-api-key":CK,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:mdl,max_tokens:8000,system:s,messages:[{role:"user",content: files.length > 0 ? content : u}]})
+      body:JSON.stringify({model:mdl,max_tokens:maxTok||8000,system:s,messages:[{role:"user",content: files.length > 0 ? content : u}]})
     });
     const d = await r.json();
     addClaudeUsage(d.usage,mdl);
@@ -781,9 +786,14 @@ SOURÇAGE SYSTÉMATIQUE — TRÈS IMPORTANT:
 - Termine PRESQUE CHAQUE paragraphe, point de liste et ligne de tableau par une citation [N] renvoyant aux SOURCES numérotées de la recherche fournie plus bas.
 - Vise une couverture QUASI TOTALE : en survolant toutes les sources, presque tout le cours doit être attribué. Réutilise une même source [N] plusieurs fois si besoin, combine [N][M] quand plusieurs sources s'appliquent.
 
+COMPLÉTUDE & NUMÉROTATION — TRÈS IMPORTANT:
+- Génère le cours ENTIER, du début jusqu'à la DERNIÈRE partie. Ne t'arrête JAMAIS au milieu.
+- Si tu annonces un plan/sommaire (ex. 6 parties), tu DOIS générer TOUTES ces parties en entier. Reste plus concis dans chaque partie si nécessaire pour tout terminer, mais ne laisse AUCUNE partie manquante ni tronquée.
+- Numérotation cohérente et continue : "PARTIE 1" puis 1.1, 1.2, 1.3 ; "PARTIE 2" puis 2.1, 2.2, 2.3… Le numéro des sous-sections doit TOUJOURS correspondre au numéro de la partie en cours. Ne mets JAMAIS une sous-section "1.3" sous la "PARTIE 2". Vérifie la cohérence de la numérotation avant de terminer.
+
 Objectifs pédagogiques par section. Biblio complète sourcée.${n>1?` Tu génères le cours ${i+1} d'une séquence de ${n} cours progressifs.`:""}${createFiles.length>0?" Des documents de référence sont joints : exploite-les au maximum pour enrichir le cours, cite les auteurs et données qu'ils contiennent.":""}`,
         `${prompt}\n\nRECHERCHE PERPLEXITY:\n${px.c}\n${px.s.length?`SOURCES:\n${px.s.map((c,j)=>`[${j+1}] ${c}`).join('\n')}`:""}\nGénère cours COMPLET, RICHE, SOURCÉ.${profileContext()}`,
-        createFiles
+        createFiles, MODEL, 16000
       );
       allCourses.push({content:r,sources:px.s,ts:new Date().toISOString(),num:i+1,total:n,semL:DB[semK]?.l,ue:selUE?.u});
     }
