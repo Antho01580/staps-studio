@@ -427,6 +427,10 @@ const[busy,setBusy]=useState(false);
 const[step,setStep]=useState("");
 const[edit,setEdit]=useState("");
 const[nextTheme,setNextTheme]=useState("");
+// Lien cours affiché <-> entrée d'historique, pour sauvegarder les modifs
+const[curHistId,setCurHistId]=useState(()=>{try{return JSON.parse(localStorage.getItem("staps_curhist"));}catch{return null;}});
+useEffect(()=>{try{localStorage.setItem("staps_curhist",JSON.stringify(curHistId));}catch(e){}},[curHistId]);
+useEffect(()=>{ if(curHistId==null||!courses.length)return; setHist(h=>h.map(x=>x.id===curHistId?{...x,courses:courses}:x)); },[courses,curHistId]);
 const[editing,setEditing]=useState(false);
 const[hist,setHist]=useState(()=>{try{return JSON.parse(localStorage.getItem("staps_hist"))||[];}catch{return[];}});
 useEffect(()=>{try{localStorage.setItem("staps_hist",JSON.stringify(hist));}catch{}},[hist]);
@@ -737,6 +741,7 @@ function openFromHistory(entry){
   if(entry.courses&&entry.courses.length>0){
     setCourses(entry.courses);
     setActiveC(0);
+    setCurHistId(entry.id);
     setPg("result");
   }
 }
@@ -800,8 +805,9 @@ Objectifs pédagogiques par section. Biblio complète sourcée.${n>1?` Tu génè
     }
     setCourses(allCourses);
     setActiveC(0);
+    const hid=Date.now(); setCurHistId(hid);
     setHist(h=>[...h,{
-      id:Date.now(),
+      id:hid,
       theme:cp.theme,
       ct:cp.ct,
       date:new Date().toISOString(),
@@ -845,7 +851,8 @@ COMPLÉTUDE & NUMÉROTATION : génère le cours ENTIER jusqu'à la dernière par
     if(isNext){
       const arr=[...courses,{...nc,num:courses.length+1,total:courses.length+1}];
       setCourses(arr);setActiveC(arr.length-1);
-      setHist(h=>[...h,{id:Date.now(),theme:theme,ct:cp.ct,date:new Date().toISOString(),dateLabel:new Date().toLocaleString("fr-FR",{day:"2-digit",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"}),promoCours:cp.promoCours||"",promo:lvl,formation:cur0.semL||"",semester:cur0.semL||"",ue:theme,sport:cp.sport||"",duration:cp.dur||"",nbCours:1,courses:[nc]}]);
+      if(curHistId==null){const hid=Date.now();setCurHistId(hid);setHist(h=>[...h,{id:hid,theme:cur0.ue||theme,ct:cp.ct,date:new Date().toISOString(),dateLabel:new Date().toLocaleString("fr-FR",{day:"2-digit",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"}),promo:lvl,formation:cur0.semL||"",semester:cur0.semL||"",ue:cur0.ue||theme,sport:cp.sport||"",duration:cp.dur||"",nbCours:arr.length,courses:arr}]);}
+      // sinon la synchro (useEffect) met à jour l'entrée d'historique courante avec la séquence étendue
     } else {
       pushUndo(cur0.content);
       setCourses(cc=>{const a=[...cc];a[activeC]={...a[activeC],content:r,sources:px.s};return a;});
