@@ -420,6 +420,7 @@ const[cp,setCp]=useState({theme:"",dur:"1h30",ct:["cm"],sport:"",nb:"30",age:"18
   nbCours:1,
   dateCours:"", // date à laquelle le cours sera dispensé (manuelle)
   promoCours:"", // promo destinataire (manuelle)
+  docNote:"", // comment utiliser les documents joints (ce que j'aime, ce qui manque)
 });
 const[courses,setCourses]=useState(()=>{try{return JSON.parse(localStorage.getItem("staps_courses"))||[];}catch{return[];}}); // persisted
 useEffect(()=>{try{localStorage.setItem("staps_courses",JSON.stringify(courses));}catch{}},[courses]);
@@ -772,7 +773,7 @@ async function generate(){
       
       const evalDiff = (evalM && students.length>0) ? `\n\nÉVALUATION DIFFÉRENCIÉE: Génère des évaluations ADAPTÉES aux profils des stagiaires. ${groups.length>0?`Propose des variantes par groupe (${groups.join(', ')}).`:"Propose des variantes par niveau."} Adapte la difficulté, les exemples sportifs, et les cas pratiques au sport et niveau de chaque stagiaire/groupe.` : "";
 
-      const filesCtx = createFiles.length > 0 ? `\n\nDOCUMENTS JOINTS (${createFiles.length} fichiers) — Utilise ces documents comme références, sources, et matériel pour enrichir le cours. Cite-les quand pertinent.` : "";
+      const filesCtx = createFiles.length > 0 ? `\n\nDOCUMENTS JOINTS (${createFiles.length} fichiers) — Utilise-les comme INSPIRATION et base de référence. TRÈS IMPORTANT : ne te limite PAS à ces documents — enrichis le cours avec D'AUTRES sources fiables (recherche web ci-dessus) et ajoute des éléments COMPLÉMENTAIRES (exemples sportifs, schémas, cas pratiques, données chiffrées). Cite toutes les sources, celles des documents ET les nouvelles.${cp.docNote?`\nCONSIGNES DE L'ENSEIGNANTE sur l'usage des documents (à respecter) : ${cp.docNote}` : ""}` : "";
 
       const prompt=`UFR STAPS Bourgogne 2025-2026\n${DB[semK]?.f||""} · ${DB[semK]?.l||""}${ueI}\nThème: ${cp.theme}\nDurée: ${cp.dur}\nTypes de cours: ${cp.ct.map(id=>CT.find(x=>x.id===id)?.n).filter(Boolean).join(" + ")}\nSport: ${cp.sport||"Général"}\nÉtudiants: ${cp.nb} · Âge: ${cp.age}\nNiveau: ${cp.lvl}\nÉléments: ${cp.opts.map(id=>OO.find(o=>o.id===id)?.n).join(", ")}${cp.cust?`\nInstructions: ${cp.cust}`:""}${courseNum}${studentsCtx}${groupsCtx}${evalM?"\nMODE ÉVALUATION activé"+evalDiff:""}${seanceM?"\nMODE SÉANCE SPORTIVE: fiche terrain complète":""}${filesCtx}`;
       
@@ -1799,6 +1800,11 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f97316aa}
     <button className="file-rm" onClick={()=>removeFile(i,setCreateFiles)}>×</button>
   </div>)}
   <div style={{fontSize:9,color:"#86efac",marginTop:3}}>✅ {createFiles.length} document{createFiles.length>1?"s":""} — Claude les utilisera comme référence pour le cours</div>
+</div>}
+{createFiles.length>0&&<div className="fd" style={{marginTop:6}}>
+<label className="lb">💬 Comment utiliser mes documents (ce que j'aime, ce qui manque)</label>
+<textarea className="ta2" rows={2} value={cp.docNote} onChange={e=>setCp(p=>({...p,docNote:e.target.value}))} placeholder="Ex : j'aime la structure et le ton — garde-les. Il manque des exemples sportifs et des schémas — ajoute-en. Complète avec d'autres sources fiables (ne te limite pas à mon document)."/>
+<div style={{fontSize:9,color:"#5a6a85",marginTop:2}}>L'IA s'inspire de tes documents ET enrichit avec d'autres sources et éléments.</div>
 </div>}
 </div>
 
