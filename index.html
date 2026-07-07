@@ -828,30 +828,36 @@ Objectifs pédagogiques par section. Biblio complète sourcée.${n>1?` Tu génè
   setBusy(false);setStep("");
 }
 
-async function regen(nextTheme){
+async function regen(mode, nextTheme){
   if(!CK){alert("⚙️ Configure d'abord ta clé API Claude (bouton ⚙️ Clés API).");setShowKeys(true);return;}
   const cur0=courses[activeC]; if(!cur0)return;
-  const isNext=!!(nextTheme&&String(nextTheme).trim());
-  const theme=isNext?String(nextTheme).trim():(cp.theme||cur0.ue||"");
-  if(!theme){alert("Précise un thème.");return;}
+  const isNext=(mode==="next");
+  const given=nextTheme&&String(nextTheme).trim();
+  const baseTheme=cp.theme||cur0.ue||"";
+  const searchTheme=given||baseTheme||"STAPS";
   const lvl=cp.lvl||cp.promoCours||"";
-  setBusy(true);setStep(isNext?"🔍 Sources (cours suivant)…":"🔍 Sources…");
+  setBusy(true);setStep(isNext?"🔍 Sources (suite)…":"🔍 Sources…");
   try{
-    const px=await ppx(`Recherche sourcée STAPS: "${theme}" niveau ${lvl}. Fournis connaissances clés AVEC références. CITE SYSTÉMATIQUEMENT.`);
-    setStep(isNext?"🧠 Génération du cours suivant…":"🧠 Régénération…");
-    const prevCtx=isNext?`\n\nCOURS PRÉCÉDENT (assure la CONTINUITÉ pédagogique, enchaîne logiquement SANS répéter) :\n${(cur0.content||"").slice(0,3500)}`:"";
+    const px=await ppx(`Recherche sourcée STAPS: "${searchTheme}"${isNext?" (pour prolonger un cours)":""} niveau ${lvl}. Fournis connaissances clés AVEC références. CITE SYSTÉMATIQUEMENT.`);
+    setStep(isNext?"🧠 Génération de la suite…":"🧠 Régénération…");
+    const prevCtx=isNext?`\n\nCOURS PRÉCÉDENT (à PROLONGER — assure la CONTINUITÉ, enchaîne logiquement SANS répéter) :\n${(cur0.content||"").slice(0,4000)}`:"";
     const sys=`Expert ingénierie pédagogique STAPS. Cours universitaire haute qualité, TOUT sourcé.
 RÈGLES VISUELLES : schémas [SCHÉMA: A → B → C], organigrammes [ORGANIGRAMME: Titre — Br1 — Br2], tableaux markdown |col|col| avec |---|---|, encadrés > citation, sous-titres ###, AU MOINS 3 schémas + 1 organigramme.
 SOURÇAGE : termine presque chaque paragraphe/point/ligne de tableau par une citation [N] renvoyant aux SOURCES numérotées fournies (couverture quasi totale, réutilise/combine [N][M]).
 COMPLÉTUDE & NUMÉROTATION : génère le cours ENTIER jusqu'à la dernière partie, ne t'arrête JAMAIS au milieu ; si tu annonces N parties, génère-les toutes ; numérotation cohérente (PARTIE 1 → 1.1/1.2/1.3 ; PARTIE 2 → 2.1/2.2 ; JAMAIS de 1.x sous la PARTIE 2).`;
-    const params=`UFR STAPS Bourgogne\nThème: ${theme}\nDurée: ${cp.dur||"2h"}\nNiveau: ${lvl}\nSport: ${cp.sport||"Général"}${isNext?"\nCe cours est LA SUITE du cours précédent (progression logique).":""}`;
+    const params=isNext
+      ?`UFR STAPS Bourgogne\nDurée: ${cp.dur||"2h"}\nNiveau: ${lvl}\nSport: ${cp.sport||"Général"}\n`+(given
+          ?`Ce cours est LA SUITE du cours précédent, sur le thème : "${given}" (progression logique, en continuité).`
+          :`Génère LA SUITE LOGIQUE et ENTIÈRE du cours précédent : détermine TOI-MÊME le prochain contenu/thème pertinent qui approfondit ou prolonge le cours dans la progression, SANS rien répéter. Donne-lui un titre clair.`)
+      :`UFR STAPS Bourgogne\nThème: ${baseTheme}\nDurée: ${cp.dur||"2h"}\nNiveau: ${lvl}\nSport: ${cp.sport||"Général"}\nRégénère ENTIÈREMENT ce cours : nouvelle version complète du même thème, du début à la fin.`;
     const r=await cl(sys,`${params}\n\nRECHERCHE PERPLEXITY:\n${px.c}\n${px.s.length?`SOURCES:\n${px.s.map((c,j)=>`[${j+1}] ${c}`).join('\n')}`:""}${prevCtx}\nGénère cours COMPLET, RICHE, SOURCÉ.${profileContext()}`,[],MODEL,16000);
     if(!r||/^Erreur/i.test(r)){alert("Échec : "+(r||"erreur"));setBusy(false);setStep("");return;}
-    const nc={content:r,sources:px.s,ts:new Date().toISOString(),num:1,total:1,semL:cur0.semL,ue:theme};
+    const ueLabel=isNext?(given||(baseTheme?baseTheme+" (suite)":"Suite")):(baseTheme||cur0.ue||"Cours");
+    const nc={content:r,sources:px.s,ts:new Date().toISOString(),num:1,total:1,semL:cur0.semL,ue:ueLabel};
     if(isNext){
       const arr=[...courses,{...nc,num:courses.length+1,total:courses.length+1}];
       setCourses(arr);setActiveC(arr.length-1);
-      if(curHistId==null){const hid=Date.now();setCurHistId(hid);setHist(h=>[...h,{id:hid,theme:cur0.ue||theme,ct:cp.ct,date:new Date().toISOString(),dateLabel:new Date().toLocaleString("fr-FR",{day:"2-digit",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"}),promo:lvl,formation:cur0.semL||"",semester:cur0.semL||"",ue:cur0.ue||theme,sport:cp.sport||"",duration:cp.dur||"",nbCours:arr.length,courses:arr}]);}
+      if(curHistId==null){const hid=Date.now();setCurHistId(hid);setHist(h=>[...h,{id:hid,theme:ueLabel,ct:cp.ct,date:new Date().toISOString(),dateLabel:new Date().toLocaleString("fr-FR",{day:"2-digit",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"}),promo:lvl,formation:cur0.semL||"",semester:cur0.semL||"",ue:ueLabel,sport:cp.sport||"",duration:cp.dur||"",nbCours:arr.length,courses:arr}]);}
       // sinon la synchro (useEffect) met à jour l'entrée d'historique courante avec la séquence étendue
     } else {
       pushUndo(cur0.content);
@@ -1864,10 +1870,10 @@ td.src-hl,th.src-hl{box-shadow:inset 0 0 0 2px #f97316aa}
 </div>
 
 <div className="regen-bar">
-<button className="ab" style={{color:"#93c5fd",borderColor:"#3b82f640",fontWeight:600}} onClick={()=>regen()} disabled={busy}>{busy?"⏳ …":"🔄 Régénérer ce cours"}</button>
-<span style={{fontSize:11,color:"#8899b5"}}>ou générer <strong>la suite</strong> :</span>
-<input className="ip" style={{maxWidth:300,flex:1,minWidth:180}} value={nextTheme} onChange={e=>setNextTheme(e.target.value)} placeholder="Ex : sport collectif de petit terrain" onKeyDown={e=>{if(e.key==="Enter"&&nextTheme.trim()){regen(nextTheme);setNextTheme("");}}} disabled={busy}/>
-<button className="ab" style={{color:"#fff",background:"linear-gradient(135deg,#3b82f6,#1d4ed8)",border:"none",fontWeight:600}} onClick={()=>{if(nextTheme.trim()){regen(nextTheme);setNextTheme("");}}} disabled={busy||!nextTheme.trim()}>➡️ Cours suivant</button>
+<button className="ab" style={{color:"#93c5fd",borderColor:"#3b82f640",fontWeight:600}} onClick={()=>regen("same")} disabled={busy}>{busy?"⏳ …":"🔄 Régénérer ce cours"}</button>
+<button className="ab" style={{color:"#fff",background:"linear-gradient(135deg,#3b82f6,#1d4ed8)",border:"none",fontWeight:600}} onClick={()=>{regen("next",nextTheme);setNextTheme("");}} disabled={busy}>➡️ Générer la suite</button>
+<span style={{fontSize:10,color:"#8899b5"}}>thème de la suite (optionnel) :</span>
+<input className="ip" style={{maxWidth:280,flex:1,minWidth:150}} value={nextTheme} onChange={e=>setNextTheme(e.target.value)} placeholder="laisse vide = suite automatique" onKeyDown={e=>{if(e.key==="Enter"){regen("next",nextTheme);setNextTheme("");}}} disabled={busy}/>
 </div>
 <div className="sel-hint">🖱️ <strong>Astuce :</strong> sélectionne n'importe quel passage du cours pour le modifier, l'expliquer ou ajouter un schéma avec l'IA.</div>
 <div className="rg">
